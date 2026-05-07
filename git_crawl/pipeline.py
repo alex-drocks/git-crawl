@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from .git_backend import commit_exists, ensure_mirror, get_ref_sha, read_commit_log
-from .github import RepoInfo, RepositoryExclusion, list_org_repositories, partition_repositories
+from .github import RepoInfo, RepositoryExclusion, list_org_repositories, list_owner_repositories, partition_repositories
 from .gitlog import CommitRecord, parse_git_log
 from .metrics import AggregateResult, aggregate_daily
 from .output import write_csv, write_jsonl
@@ -27,6 +27,10 @@ from .state import (
 REF_SCOPE_DEFAULT_BRANCH = "default-branch"
 REF_SCOPE_ALL_REFS = "all-refs"
 REF_SCOPES = {REF_SCOPE_DEFAULT_BRANCH, REF_SCOPE_ALL_REFS}
+
+OUTPUT_SCHEMA_VERSION = "git-crawl-output-v1"
+OUTPUT_MANIFEST_VERSION = "git-crawl-output-manifest-v1"
+SUMMARY_SCHEMA_VERSION = "git-crawl-summary-v1"
 
 REPO_DAY_FIELDS = [
     "run_id",
@@ -144,6 +148,17 @@ EXCLUDED_REPOSITORY_FIELDS = [
     "language",
     "exclusion_reason",
 ]
+OUTPUT_DATASET_FIELDS = {
+    "crawl_runs": CRAWL_RUN_FIELDS,
+    "org_days": ORG_DAY_FIELDS,
+    "repo_days": REPO_DAY_FIELDS,
+    "contributor_days": CONTRIBUTOR_DAY_FIELDS,
+    "repositories": REPOSITORY_FIELDS,
+    "excluded_repositories": EXCLUDED_REPOSITORY_FIELDS,
+    "commits": COMMIT_FIELDS,
+    "file_changes": FILE_CHANGE_FIELDS,
+    "repo_failures": REPO_FAILURE_FIELDS,
+}
 
 
 @dataclass(frozen=True)
@@ -215,6 +230,50 @@ class CrawlResult:
     repo_state_updates: list[RepoStateUpdate]
     aggregates: AggregateResult
     excluded_repositories: list[ExcludedRepositoryRow] = field(default_factory=list)
+
+
+def crawl_owner(
+    owner: str,
+    *,
+    cache_dir: str | Path,
+    token: str | None = None,
+    owner_type: str = "auto",
+    active_since: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    include_archived: bool = False,
+    include_forks: bool = False,
+    max_repos: int | None = None,
+    prefer_ssh: bool = False,
+    ref_scope: str = REF_SCOPE_DEFAULT_BRANCH,
+    state_db: str | Path | None = None,
+    workers: int = 1,
+    fail_fast: bool = False,
+    finalize_state: bool = True,
+) -> CrawlResult:
+    """Crawl repositories for a GitHub owner root, resolving orgs or users.
+
+    Repository identity uses stable ``owner/repo`` full names so downstream
+    packages can safely merge outputs from multiple owners.
+    """
+    repositories = list_owner_repositories(owner, owner_type=owner_type, token=token)
+    return crawl_repositories(
+        owner,
+        repositories,
+        cache_dir=cache_dir,
+        active_since=active_since,
+        since=since,
+        until=until,
+        include_archived=include_archived,
+        include_forks=include_forks,
+        max_repos=max_repos,
+        prefer_ssh=prefer_ssh,
+        ref_scope=ref_scope,
+        state_db=state_db,
+        workers=workers,
+        fail_fast=fail_fast,
+        finalize_state=finalize_state,
+    )
 
 
 def crawl_org(
@@ -913,6 +972,8 @@ def build_crawl_summary(result: CrawlResult) -> dict[str, object]:
     calendar_span = _calendar_span(first_day, last_day)
 
     return {
+        "schema_version": SUMMARY_SCHEMA_VERSION,
+        "output_schema_version": OUTPUT_SCHEMA_VERSION,
         "run_id": result.run.run_id,
         "org": result.org,
         "status": result.run.status,
@@ -1086,6 +1147,45 @@ def _render_summary_markdown(summary: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
+def build_output_manifest(
+    result: CrawlResult,
+    *,
+    write_json: bool = True,
+    write_csv_files: bool = True,
+) -> dict[str, object]:
+    """Describe the versioned output contract for files written by a crawl run."""
+    datasets: dict[str, dict[str, object]] = {}
+    for dataset, fields in OUTPUT_DATASET_FIELDS.items():
+        entry: dict[str, object] = {
+            "schema_version": f"git-crawl-{dataset.replace('_', '-')}-v1",
+            "fields": fields,
+        }
+        if write_json:
+            entry["jsonl"] = f"{dataset}.jsonl"
+        if write_csv_files:
+            entry["csv"] = f"{dataset}.csv"
+        datasets[dataset] = entry
+
+    if write_json:
+        datasets["summary"] = {
+            "schema_version": SUMMARY_SCHEMA_VERSION,
+            "json": "summary.json",
+            "fields": None,
+        }
+
+    return {
+        "manifest_version": OUTPUT_MANIFEST_VERSION,
+        "output_schema_version": OUTPUT_SCHEMA_VERSION,
+        "summary_schema_version": SUMMARY_SCHEMA_VERSION,
+        "run": {
+            "run_id": result.run.run_id,
+            "status": result.run.status,
+            "target": result.org,
+        },
+        "datasets": datasets,
+    }
+
+
 def write_crawl_outputs(
     result: CrawlResult,
     output_dir: str | Path,
@@ -1184,5 +1284,17 @@ def write_crawl_outputs(
                 failures_csv,
             ]
         )
+
+    output_manifest = output_dir / "output_manifest.json"
+    output_manifest.write_text(
+        json.dumps(
+            build_output_manifest(result, write_json=write_json, write_csv_files=write_csv_files),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    written.append(output_manifest)
 
     return written

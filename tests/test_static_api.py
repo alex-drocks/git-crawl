@@ -27,6 +27,16 @@ def test_publish_static_api_copies_outputs_and_writes_fetchable_indexes(tmp_path
     )
     (data_dir / "org_days.jsonl").write_text('{"day":"2026-05-06","commits":2}\n', encoding="utf-8")
     (data_dir / "repositories.csv").write_text("org,name\nchutesai,api\n", encoding="utf-8")
+    (data_dir / "output_manifest.json").write_text(
+        json.dumps(
+            {
+                "manifest_version": "git-crawl-output-manifest-v1",
+                "output_schema_version": "git-crawl-output-v1",
+                "datasets": {},
+            }
+        ),
+        encoding="utf-8",
+    )
     stale_target = site_dir / "chutesai" / "latest" / "stale.json"
     stale_target.parent.mkdir(parents=True)
     stale_target.write_text("stale", encoding="utf-8")
@@ -40,13 +50,19 @@ def test_publish_static_api_copies_outputs_and_writes_fetchable_indexes(tmp_path
     )
 
     assert result.dataset_dir == site_dir / "chutesai" / "latest"
-    assert sorted(path.name for path in result.copied_files) == ["org_days.jsonl", "repositories.csv", "summary.json"]
+    assert sorted(path.name for path in result.copied_files) == [
+        "org_days.jsonl",
+        "output_manifest.json",
+        "repositories.csv",
+        "summary.json",
+    ]
     assert (site_dir / "chutesai" / "latest" / "summary.json").is_file()
     assert (site_dir / "chutesai" / "latest" / "org_days.jsonl").is_file()
     assert not stale_target.exists()
 
     latest = json.loads((site_dir / "api" / "chutesai" / "latest.json").read_text(encoding="utf-8"))
     assert latest["api_version"] == 1
+    assert latest["output_schema_version"] == "git-crawl-output-v1"
     assert latest["org"] == "chutesai"
     assert latest["run_label"] == "latest"
     assert latest["generated_at"] == "2026-05-06T00:00:00+00:00"
@@ -61,6 +77,10 @@ def test_publish_static_api_copies_outputs_and_writes_fetchable_indexes(tmp_path
     assert latest["summary"] == {
         "path": "/chutesai/latest/summary.json",
         "url": "https://alex-drocks.github.io/git-crawl/chutesai/latest/summary.json",
+    }
+    assert latest["output_manifest"] == {
+        "path": "/chutesai/latest/output_manifest.json",
+        "url": "https://alex-drocks.github.io/git-crawl/chutesai/latest/output_manifest.json",
     }
     assert latest["files"]["org_days.jsonl"] == {
         "format": "jsonl",

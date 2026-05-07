@@ -17,6 +17,7 @@ from .pipeline import (
     REF_SCOPE_ALL_REFS,
     REF_SCOPE_DEFAULT_BRANCH,
     crawl_org,
+    crawl_owner,
     crawl_repositories,
     finalize_crawl_state,
     write_crawl_outputs,
@@ -100,6 +101,83 @@ def build_parser() -> argparse.ArgumentParser:
         help="maximum repositories to crawl concurrently when --fail-fast is not set (default: 1)",
     )
     crawl.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="stop the crawl on the first repository failure",
+    )
+
+    crawl_owner_parser = subparsers.add_parser("crawl-owner", help="crawl one GitHub owner (organization or user)")
+    crawl_owner_parser.add_argument("owner", help="GitHub owner login, e.g. chutesai or torvalds")
+    crawl_owner_parser.add_argument(
+        "--owner-type",
+        choices=["auto", "org", "user"],
+        default="auto",
+        help="owner kind to resolve (default: auto; try org then user)",
+    )
+    crawl_owner_parser.add_argument(
+        "--output-dir",
+        help="directory for structured output files (default: out)",
+    )
+    crawl_owner_parser.add_argument(
+        "--cache-dir",
+        help="directory for bare git mirrors (default: .cache/git-crawl)",
+    )
+    crawl_owner_parser.add_argument(
+        "--state-db",
+        help="SQLite state database for crawl runs and incremental default-branch heads",
+    )
+    crawl_owner_parser.add_argument(
+        "--active-since",
+        help="only crawl repos pushed at or after this ISO timestamp/date",
+    )
+    crawl_owner_parser.add_argument(
+        "--since",
+        help="only include commits authored at or after this ISO timestamp/date; unparseable values pass to git",
+    )
+    crawl_owner_parser.add_argument(
+        "--until",
+        help="only include commits authored at or before this ISO timestamp/date; unparseable values pass to git",
+    )
+    crawl_owner_parser.add_argument("--max-repos", type=_positive_int, help="cap number of repos crawled")
+    crawl_owner_parser.add_argument(
+        "--include-archived",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="include archived repositories",
+    )
+    crawl_owner_parser.add_argument(
+        "--include-forks",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="include fork repositories",
+    )
+    crawl_owner_parser.add_argument(
+        "--prefer-ssh",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="clone discovered repos via SSH instead of HTTPS",
+    )
+    crawl_owner_parser.add_argument(
+        "--token-env",
+        default="GITHUB_TOKEN",
+        help="environment variable containing a GitHub token (default: GITHUB_TOKEN)",
+    )
+    crawl_owner_parser.add_argument(
+        "--format",
+        choices=["all", "jsonl", "csv"],
+        help="output format to write (default: all)",
+    )
+    crawl_owner_parser.add_argument(
+        "--ref-scope",
+        choices=[REF_SCOPE_DEFAULT_BRANCH, REF_SCOPE_ALL_REFS],
+        help="git refs to inspect (default: default-branch)",
+    )
+    crawl_owner_parser.add_argument(
+        "--workers",
+        type=_positive_int,
+        help="maximum repositories to crawl concurrently when --fail-fast is not set (default: 1)",
+    )
+    crawl_owner_parser.add_argument(
         "--fail-fast",
         action="store_true",
         help="stop the crawl on the first repository failure",
@@ -207,6 +285,80 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "crawl-owner":
+        output_format = _pick(args.format, None, "all")
+        state_db = _pick(args.state_db, None, None)
+        output_dir = Path(_pick(args.output_dir, None, "out"))
+        max_repos = _pick(args.max_repos, None, None)
+        workers = _pick(args.workers, None, 1)
+        if max_repos is not None and max_repos < 1:
+            parser.error("--max-repos must be >= 1")
+        if workers < 1:
+            parser.error("--workers must be >= 1")
+        token = token_from_env(args.token_env)
+        try:
+            result = crawl_owner(
+                args.owner,
+                cache_dir=Path(_pick(args.cache_dir, None, ".cache/git-crawl")),
+                token=token,
+                owner_type=args.owner_type,
+                active_since=_pick(args.active_since, None, None),
+                since=_pick(args.since, None, None),
+                until=_pick(args.until, None, None),
+                include_archived=_pick(args.include_archived, None, False),
+                include_forks=_pick(args.include_forks, None, False),
+                max_repos=max_repos,
+                prefer_ssh=_pick(args.prefer_ssh, None, False),
+                ref_scope=_pick(args.ref_scope, None, REF_SCOPE_DEFAULT_BRANCH),
+                state_db=state_db,
+                workers=workers,
+                fail_fast=args.fail_fast,
+                finalize_state=state_db is None,
+            )
+        except GitHubAPIError as exc:
+            print(f"failed to resolve owner repositories: {exc}", file=sys.stderr)
+            return 1
+        try:
+            written = write_crawl_outputs(
+                result,
+                output_dir,
+                write_json=output_format in {"all", "jsonl"},
+                write_csv_files=output_format in {"all", "csv"},
+            )
+        except Exception as exc:  # noqa: BLE001 - CLI should preserve state safety on output failures
+            if state_db:
+                error_message = _join_errors(result.run.error_message, f"output write failed: {exc}")
+                finalize_crawl_state(
+                    result,
+                    state_db,
+                    status="failed",
+                    error_message=error_message,
+                    update_repo_states=False,
+                )
+            print(f"failed to write crawl outputs: {exc}", file=sys.stderr)
+            return 1
+
+        if state_db:
+            result = finalize_crawl_state(result, state_db)
+        print(
+            f"Crawled {len(result.repositories)} repos for owner {result.org}: "
+            f"{len(result.commits)} commits, "
+            f"{len(result.file_changes)} file-change rows, "
+            f"{len(result.aggregates.org_days)} target-day rows, "
+            f"{len(result.aggregates.repo_days)} repo-day rows, "
+            f"{len(result.aggregates.contributor_days)} contributor-day rows, "
+            f"{len(result.failed_repositories)} repo failures."
+        )
+        print(f"Run {result.run.run_id}: {result.run.status}")
+        if state_db:
+            print(
+                "State DB active: default-branch crawls emit only commits outside "
+                "the matching prior state window."
+            )
+        for path in written:
+            print(path)
+        return 0 if result.run.status in {"success", "partial"} else 1
 
     if args.command == "crawl-repos":
         manifest_target, repo_urls = _load_repository_manifest(Path(args.manifest))

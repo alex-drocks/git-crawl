@@ -54,6 +54,7 @@ For a static host rooted at `https://example.com/git-crawl`, a target label `chu
 /chutesai/latest/index.json
 /chutesai/latest/summary.json
 /chutesai/latest/summary.md
+/chutesai/latest/output_manifest.json
 /chutesai/latest/crawl_runs.jsonl
 /chutesai/latest/repositories.jsonl
 /chutesai/latest/excluded_repositories.jsonl
@@ -73,6 +74,7 @@ CSV siblings are published too when the crawl writes them, for example `/chutesa
 - generated timestamp;
 - target/org and run label;
 - crawl run status and totals when `summary.json` is present;
+- output schema version and `output_manifest.json` endpoint when present;
 - dashboard endpoint for the human-friendly KPI page;
 - calendar span and average metrics when present;
 - every copied output file with path, format, byte size, and URL when `--base-url` is configured.

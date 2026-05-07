@@ -5,7 +5,7 @@ import urllib.parse
 import pytest
 
 from git_crawl import github
-from git_crawl.github import GitHubAPIError, list_org_repositories
+from git_crawl.github import GitHubAPIError, list_org_repositories, list_owner_repositories, list_user_repositories
 
 
 class FakeResponse:
@@ -228,12 +228,12 @@ def test_list_org_repositories_uses_jittered_exponential_backoff(monkeypatch):
     assert sleeps == [1.5, 4.0, 10.0]
 
 
-def _repo_payload(name, pushed_at="2026-05-01T00:00:00Z"):
+def _repo_payload(name, pushed_at="2026-05-01T00:00:00Z", owner="chutesai"):
     return {
         "name": name,
-        "full_name": f"chutesai/{name}",
-        "clone_url": f"https://github.com/chutesai/{name}.git",
-        "ssh_url": f"git@github.com:chutesai/{name}.git",
+        "full_name": f"{owner}/{name}",
+        "clone_url": f"https://github.com/{owner}/{name}.git",
+        "ssh_url": f"git@github.com:{owner}/{name}.git",
         "default_branch": "main",
         "pushed_at": pushed_at,
         "archived": False,
@@ -301,6 +301,79 @@ def test_list_org_repositories_wraps_repeated_malformed_json_failures():
             max_attempts=2,
             retry_delay=0,
         )
+
+
+def test_list_owner_repositories_auto_falls_back_from_org_to_user_owner_root():
+    requested_paths = []
+
+    def fake_urlopen(request, timeout):
+        parsed = urllib.parse.urlparse(request.full_url)
+        requested_paths.append(parsed.path)
+        if parsed.path == "/orgs/alice/repos":
+            raise urllib.error.HTTPError(
+                request.full_url,
+                404,
+                "Not Found",
+                hdrs={},
+                fp=None,
+            )
+        assert parsed.path == "/users/alice/repos"
+        return FakeResponse(json.dumps([_repo_payload("portfolio", owner="alice")]).encode("utf-8"))
+
+    repos = list_owner_repositories(
+        "alice",
+        urlopen=fake_urlopen,
+        max_attempts=1,
+        retry_delay=0,
+    )
+
+    assert requested_paths == ["/orgs/alice/repos", "/users/alice/repos"]
+    assert [repo.full_name for repo in repos] == ["alice/portfolio"]
+
+
+def test_list_owner_repositories_can_request_user_or_org_owner_type_directly():
+    requested_paths = []
+
+    def fake_urlopen(request, timeout):
+        parsed = urllib.parse.urlparse(request.full_url)
+        requested_paths.append(parsed.path)
+        return FakeResponse(json.dumps([_repo_payload("profile", owner="alice")]).encode("utf-8"))
+
+    repos = list_owner_repositories(
+        "alice",
+        owner_type="user",
+        urlopen=fake_urlopen,
+        max_attempts=1,
+        retry_delay=0,
+    )
+
+    assert requested_paths == ["/users/alice/repos"]
+    assert [repo.full_name for repo in repos] == ["alice/profile"]
+
+
+def test_list_user_repositories_uses_public_user_endpoint():
+    requested_urls = []
+
+    def fake_urlopen(request, timeout):
+        requested_urls.append(request.full_url)
+        return FakeResponse(json.dumps([_repo_payload("profile", owner="alice")]).encode("utf-8"))
+
+    repos = list_user_repositories(
+        "alice",
+        urlopen=fake_urlopen,
+        max_attempts=1,
+        retry_delay=0,
+    )
+
+    parsed = urllib.parse.urlparse(requested_urls[0])
+    assert parsed.path == "/users/alice/repos"
+    assert "type=owner" in requested_urls[0]
+    assert [repo.full_name for repo in repos] == ["alice/profile"]
+
+
+def test_list_owner_repositories_rejects_unknown_owner_type():
+    with pytest.raises(ValueError, match="owner_type"):
+        list_owner_repositories("alice", owner_type="team")
 
 
 def test_list_org_repositories_rejects_per_page_values_github_would_truncate():

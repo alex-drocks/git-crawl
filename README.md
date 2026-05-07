@@ -17,7 +17,8 @@ The GitHub API is still used for public repository discovery and metadata.
 
 ## Crawl modes
 
-- `crawl-org`: discover and crawl selected repositories from one GitHub organization or owner.
+- `crawl-org`: discover and crawl selected repositories from one GitHub organization, preserving legacy short repo names in raw rows and state.
+- `crawl-owner`: discover and crawl selected repositories from a GitHub owner root. It tries organization discovery first, falls back to user discovery when the org does not exist, and uses full `owner/repo` repository identity in raw rows and state.
 - `crawl-repos`: crawl an explicit manifest of GitHub repository URLs. This is the preferred integration point for adapters such as a future `tao-git-crawl`, because exact repo links stay exact and are not expanded into unrelated owner-wide crawls.
 
 ## Quick start
@@ -35,6 +36,13 @@ git-crawl crawl-org chutesai \
   --max-repos 1 \
   --since 2026-01-01 \
   --output-dir out/chutesai-smoke
+
+# Crawl a GitHub owner root that may be an organization or a user.
+git-crawl crawl-owner torvalds \
+  --owner-type auto \
+  --max-repos 1 \
+  --since 2026-01-01 \
+  --output-dir out/torvalds-smoke
 ```
 
 ## Explicit repository manifests
@@ -92,12 +100,14 @@ repo_failures.jsonl
 repo_failures.csv
 summary.json
 summary.md
+output_manifest.json
 ```
 
-Reports:
+Reports and schema contract:
 
-- `summary.json`: machine-readable run summary, totals, calendar-span averages, path-class breakdowns, top repos, and top paths by lines added.
+- `summary.json`: machine-readable run summary, totals, calendar-span averages, path-class breakdowns, top repos, and top paths by lines added. It includes `schema_version` and `output_schema_version` for downstream compatibility checks.
 - `summary.md`: human-readable summary with calendar averages and interpretation caveats.
+- `output_manifest.json`: versioned output contract listing every dataset, its schema version, emitted filename(s), and ordered fields. Downstream packages should check this file before loading crawl outputs.
 
 Daily aggregate rows:
 
@@ -180,7 +190,7 @@ Command-line flags override config values when supplied.
 
 When `--state-db` is set and `--ref-scope default-branch` is used, the crawler records the last successfully crawled default branch SHA per repository and history window. Later runs with the same default branch, `--since`, and `--until` process `previous_sha..current_sha` instead of re-reading the whole branch. If the default branch or history window changes, or if the previous SHA is no longer present in the local mirror after a cache rebuild/force push, the crawler falls back to a full read of the current default branch scope.
 
-For `crawl-org`, state rows use the short repository name within the org target. For `crawl-repos`, state rows use `owner/repo` full names to avoid cross-owner collisions.
+For `crawl-org`, state rows use the short repository name within the org target. For `crawl-owner` and `crawl-repos`, state rows use `owner/repo` full names to avoid cross-owner collisions.
 
 The CLI advances repository state after structured output files are written successfully. If output writing fails, the run is marked failed and repository SHAs are not advanced, so a retry can re-emit the missed rows.
 

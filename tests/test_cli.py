@@ -10,6 +10,65 @@ from git_crawl.github import RepoInfo
 from git_crawl.state import CrawlStateStore
 
 
+def test_cli_crawl_owner_delegates_to_owner_crawler(monkeypatch, tmp_path, capsys):
+    repo = RepoInfo(
+        name="portfolio",
+        full_name="alice/portfolio",
+        clone_url="https://github.com/alice/portfolio.git",
+        ssh_url="git@github.com:alice/portfolio.git",
+        default_branch="main",
+        pushed_at="2026-05-01T00:00:00Z",
+        archived=False,
+        fork=False,
+        private=False,
+        language="Python",
+    )
+    captured = {}
+
+    def fake_crawl_owner(owner, **kwargs):
+        captured["owner"] = owner
+        captured["crawl_kwargs"] = kwargs
+        return SimpleNamespace(
+            org=owner,
+            run=SimpleNamespace(run_id="run-owner", status="success"),
+            repositories=[repo],
+            commits=[],
+            file_changes=[],
+            aggregates=SimpleNamespace(repo_days=[], contributor_days=[], org_days=[]),
+            failed_repositories=[],
+        )
+
+    monkeypatch.setattr("git_crawl.cli.crawl_owner", fake_crawl_owner)
+    monkeypatch.setattr("git_crawl.cli.finalize_crawl_state", lambda result, state_db, **kwargs: result)
+    monkeypatch.setattr("git_crawl.cli.write_crawl_outputs", lambda *args, **kwargs: [tmp_path / "out" / "summary.json"])
+
+    exit_code = main(
+        [
+            "crawl-owner",
+            "alice",
+            "--owner-type",
+            "user",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--cache-dir",
+            str(tmp_path / "mirrors"),
+            "--state-db",
+            str(tmp_path / "state.sqlite"),
+            "--workers",
+            "2",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert captured["owner"] == "alice"
+    assert captured["crawl_kwargs"]["owner_type"] == "user"
+    assert captured["crawl_kwargs"]["workers"] == 2
+    assert captured["crawl_kwargs"]["state_db"] == str(tmp_path / "state.sqlite")
+    assert "Crawled 1 repos for owner alice" in output
+    assert str(tmp_path / "out" / "summary.json") in output
+
+
 def test_cli_crawl_repos_loads_manifest_and_delegates_to_explicit_repo_crawler(monkeypatch, tmp_path, capsys):
     manifest_path = tmp_path / "repos.json"
     manifest_path.write_text(

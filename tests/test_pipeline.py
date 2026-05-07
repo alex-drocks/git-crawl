@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from git_crawl.github import RepoInfo
-from git_crawl.pipeline import crawl_org, crawl_repositories
+from git_crawl.pipeline import crawl_org, crawl_owner, crawl_repositories
 from git_crawl.state import CrawlStateStore
 
 
@@ -21,6 +21,44 @@ def _repo_info(owner: str, name: str, *, pushed_at: str = "2026-05-01T00:00:00Z"
         private=False,
         language="Python",
     )
+
+
+def test_crawl_owner_discovers_org_or_user_repos_and_uses_full_repo_identity(monkeypatch, tmp_path):
+    repo = _repo_info("alice", "portfolio", pushed_at="2026-05-02T00:00:00Z")
+    captured = {}
+
+    def fake_list_owner_repositories(owner, **kwargs):
+        captured["owner"] = owner
+        captured["owner_kwargs"] = kwargs
+        return [repo]
+
+    monkeypatch.setattr("git_crawl.pipeline.list_owner_repositories", fake_list_owner_repositories)
+    monkeypatch.setattr("git_crawl.pipeline.ensure_mirror", lambda repo, cache_dir, prefer_ssh=False: tmp_path / repo.full_name)
+    monkeypatch.setattr("git_crawl.pipeline.get_ref_sha", lambda mirror, ref: "newsha")
+    monkeypatch.setattr(
+        "git_crawl.pipeline.read_commit_log",
+        lambda mirror, *, since=None, until=None, revision=None, all_refs=False: (
+            "\x1enewsha\x1fAlice Example\x1falice@example.com\x1f"
+            "2026-05-04T10:15:00+00:00\x1f\n"
+            "1\t0\tREADME.md\n"
+        ),
+    )
+
+    state_db = tmp_path / "state.sqlite"
+    result = crawl_owner(
+        "alice",
+        cache_dir=tmp_path / "mirrors",
+        state_db=state_db,
+        owner_type="auto",
+    )
+
+    assert captured["owner"] == "alice"
+    assert captured["owner_kwargs"]["owner_type"] == "auto"
+    assert result.org == "alice"
+    assert [row.repo for row in result.raw_commits] == ["alice/portfolio"]
+    store = CrawlStateStore(state_db)
+    assert store.get_repo_state(org="alice", repo="alice/portfolio") is not None
+    assert store.get_repo_state(org="alice", repo="portfolio") is None
 
 
 def test_crawl_repositories_uses_full_names_for_cross_owner_repo_identity(monkeypatch, tmp_path):

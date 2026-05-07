@@ -216,6 +216,115 @@ def test_cli_end_to_end_writes_outputs_and_validates_schemas(monkeypatch, tmp_pa
     assert _jsonl_rows(output_dir / "repo_failures.jsonl") == []
 
 
+def test_cli_crawl_repos_end_to_end_uses_full_repo_keys_and_publishes_static_dashboard(
+    monkeypatch,
+    tmp_path,
+    capsys,
+    local_git_repo,
+):
+    local_git_repo.write_text("src/app.py", "print('hello')\n")
+    first_sha = local_git_repo.commit("initial app")
+    local_git_repo.write_text("src/app.py", "print('hello')\nprint('world')\n")
+    second_sha = local_git_repo.commit("extend app")
+
+    manifest_path = tmp_path / "repos.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "target": "explicit-target",
+                "repositories": ["https://github.com/localorg/demo/tree/main"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "git_crawl.cli.list_repositories_from_urls",
+        lambda urls, token=None: [_repo_info(local_git_repo.path)],
+    )
+
+    output_dir = tmp_path / "explicit-out"
+    state_db = tmp_path / "explicit-state.sqlite"
+    exit_code = main(
+        [
+            "crawl-repos",
+            str(manifest_path),
+            "--cache-dir",
+            str(tmp_path / "explicit-mirrors"),
+            "--state-db",
+            str(state_db),
+            "--output-dir",
+            str(output_dir),
+            "--format",
+            "all",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Crawled 1 repos for explicit-target: 2 commits" in captured.out
+    assert str(output_dir / "summary.json") in captured.out
+
+    summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["status"] == "success"
+    assert summary["org"] == "explicit-target"
+    assert summary["repositories"] == {
+        "discovered": 1,
+        "selected": 1,
+        "crawled": 1,
+        "failed": 0,
+        "excluded": 0,
+        "excluded_by_reason": {},
+    }
+    assert summary["totals"]["commits"] == 2
+    assert summary["totals"]["file_changes"] == 2
+
+    repositories = _jsonl_rows(output_dir / "repositories.jsonl")
+    assert repositories[0]["org"] == "explicit-target"
+    assert repositories[0]["name"] == "demo"
+    assert repositories[0]["full_name"] == "localorg/demo"
+
+    commits = _jsonl_rows(output_dir / "commits.jsonl")
+    assert {row["sha"] for row in commits} == {first_sha, second_sha}
+    assert {row["repo"] for row in commits} == {"localorg/demo"}
+    assert {row["repo"] for row in _jsonl_rows(output_dir / "repo_days.jsonl")} == {"localorg/demo"}
+    assert {row["repo"] for row in _jsonl_rows(output_dir / "file_changes.jsonl")} == {"localorg/demo"}
+    assert _jsonl_rows(output_dir / "repo_failures.jsonl") == []
+
+    repo_state = CrawlStateStore(state_db).get_repo_state(org="explicit-target", repo="localorg/demo")
+    assert repo_state is not None
+    assert repo_state.last_ref_sha == second_sha
+
+    site_dir = tmp_path / "site"
+    assert (
+        main(
+            [
+                "build-static-api",
+                "explicit-target",
+                "--data-dir",
+                str(output_dir),
+                "--site-dir",
+                str(site_dir),
+                "--base-url",
+                "https://example.test/git-crawl",
+            ]
+        )
+        == 0
+    )
+    static_output = capsys.readouterr().out
+    assert str(site_dir / "explicit-target" / "latest" / "dashboard.html") in static_output
+
+    latest = json.loads((site_dir / "api" / "explicit-target" / "latest.json").read_text(encoding="utf-8"))
+    assert latest["org"] == "explicit-target"
+    assert latest["run"]["status"] == "success"
+    assert latest["dashboard"] == {
+        "path": "/explicit-target/latest/dashboard.html",
+        "url": "https://example.test/git-crawl/explicit-target/latest/dashboard.html",
+    }
+    dashboard = (site_dir / "explicit-target" / "latest" / "dashboard.html").read_text(encoding="utf-8")
+    assert "explicit-target KPI dashboard" in dashboard
+    assert "localorg/demo" in dashboard
+
+
 def test_crawl_org_preserves_raw_mailmapped_author_and_non_ascii_paths(monkeypatch, tmp_path, local_git_repo):
     local_git_repo.write_text(
         ".mailmap",

@@ -195,7 +195,25 @@ python -m compileall -q git_crawl
 python -m pytest tests -q
 ```
 
-CI runs the same lint, compile, and test gates on every branch push and pull request.
+CI runs the same lint, compile, and test gates on every branch push and pull request. It also builds source/wheel distributions and smoke-installs the wheel in a clean consumer virtualenv.
+
+Before publishing or wiring a downstream package to a new commit, run the release-oriented gates locally:
+
+```bash
+python -m pip install build
+python -m build
+python scripts/smoke_consumer_install.py dist/*.whl
+```
+
+A downstream package can use `git-crawl` before it is on PyPI by pinning a GitHub tag or commit with a PEP 508 direct reference:
+
+```toml
+dependencies = [
+  "git-crawl @ git+https://github.com/alex-drocks/git-crawl.git@<commit-sha-or-tag>"
+]
+```
+
+Prefer tags for repeatability once a tag exists. Raw branch references such as `@main` are convenient but are not reproducible enough for serious downstream testing.
 
 ## Data accuracy notes
 

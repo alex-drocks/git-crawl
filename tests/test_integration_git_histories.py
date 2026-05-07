@@ -216,7 +216,7 @@ def test_cli_end_to_end_writes_outputs_and_validates_schemas(monkeypatch, tmp_pa
     assert _jsonl_rows(output_dir / "repo_failures.jsonl") == []
 
 
-def test_cli_crawl_repos_end_to_end_uses_full_repo_keys_and_publishes_static_dashboard(
+def test_cli_crawl_repos_end_to_end_uses_full_repo_keys_and_structured_outputs(
     monkeypatch,
     tmp_path,
     capsys,
@@ -293,36 +293,6 @@ def test_cli_crawl_repos_end_to_end_uses_full_repo_keys_and_publishes_static_das
     repo_state = CrawlStateStore(state_db).get_repo_state(org="explicit-target", repo="localorg/demo")
     assert repo_state is not None
     assert repo_state.last_ref_sha == second_sha
-
-    site_dir = tmp_path / "site"
-    assert (
-        main(
-            [
-                "build-static-api",
-                "explicit-target",
-                "--data-dir",
-                str(output_dir),
-                "--site-dir",
-                str(site_dir),
-                "--base-url",
-                "https://example.test/git-crawl",
-            ]
-        )
-        == 0
-    )
-    static_output = capsys.readouterr().out
-    assert str(site_dir / "explicit-target" / "latest" / "dashboard.html") in static_output
-
-    latest = json.loads((site_dir / "api" / "explicit-target" / "latest.json").read_text(encoding="utf-8"))
-    assert latest["org"] == "explicit-target"
-    assert latest["run"]["status"] == "success"
-    assert latest["dashboard"] == {
-        "path": "/explicit-target/latest/dashboard.html",
-        "url": "https://example.test/git-crawl/explicit-target/latest/dashboard.html",
-    }
-    dashboard = (site_dir / "explicit-target" / "latest" / "dashboard.html").read_text(encoding="utf-8")
-    assert "explicit-target KPI dashboard" in dashboard
-    assert "localorg/demo" in dashboard
 
 
 def test_crawl_org_preserves_raw_mailmapped_author_and_non_ascii_paths(monkeypatch, tmp_path, local_git_repo):

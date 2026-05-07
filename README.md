@@ -7,7 +7,7 @@ It is designed to be **zero-hosting by default**:
 - no required hosted API;
 - no central scheduled crawler that Alex has to operate;
 - users bring their own GitHub token, storage, cache, schedule, and deployment;
-- outputs are local JSONL/CSV/JSON/Markdown plus optional static HTML dashboards that can be published to any static host.
+- outputs are local JSONL/CSV/JSON/Markdown files that any downstream consumer can load.
 
 ## Why clone/fetch repos instead of only using the GitHub API?
 
@@ -29,7 +29,7 @@ python -m venv .venv
 pip install -e '.[dev]'
 
 # Optional but recommended to raise GitHub API rate limits.
-export GITHUB_TOKEN=***
+export GITHUB_TOKEN='***'
 
 # Crawl one public org, capped to one recent repo for a smoke test.
 git-crawl crawl-org chutesai \
@@ -146,21 +146,9 @@ Defaults:
 - Continues past individual repository failures and records them in `repo_failures`. Add `--fail-fast` to stop after the first repository failure and return a failed run with the failure row preserved. Fail-fast crawls run sequentially even if `--workers` is greater than 1, so no already-started background repositories are silently ignored.
 - Retries transient GitHub API discovery failures and git mirror clone/fetch failures with bounded jittered exponential backoff. GitHub `Retry-After` and `X-RateLimit-Reset` headers are used before falling back to exponential API retry delays.
 
-## Optional static API and KPI dashboard
+## Downstream consumption boundary
 
-`git-crawl` can turn an output directory into static files for a human-friendly dashboard and machine-readable manifests:
-
-```bash
-git-crawl build-static-api chutesai \
-  --data-dir out/chutesai-smoke \
-  --site-dir site \
-  --run-label latest \
-  --base-url https://example.com/git-crawl
-```
-
-This produces a root `index.html`, a run-scoped `dashboard.html`, copied JSON/JSONL/CSV/Markdown outputs, and manifest files under `api/`.
-
-The package intentionally does **not** ship an active scheduled GitHub Pages crawler workflow. If you want public hosting, publish the generated `site/` directory with your own GitHub Actions workflow, cron job, VPS, Pages project, S3 bucket, or any other static host. See [`docs/static-api.md`](docs/static-api.md) for endpoint details and local smoke-test commands.
+`git-crawl` stops at structured data generation. It does not ship a dashboard, hosted API, scheduled crawler, or static-site publisher. Product-specific views, KPI pages, public dashboards, and deployment workflows should live in downstream consumers such as `tao-git-crawl`, private applications, notebooks, BI tools, or a separate reporting package.
 
 ## Config file
 

@@ -18,3 +18,7 @@ def test_source_distribution_manifest_includes_hardening_docs_and_scripts():
     assert "recursive-include docs" in manifest
     assert "recursive-include scripts" in manifest
     assert "recursive-include tests" in manifest
+
+
+def test_core_package_does_not_ship_static_dashboard_module():
+    assert not Path("git_crawl/static_api.py").exists()

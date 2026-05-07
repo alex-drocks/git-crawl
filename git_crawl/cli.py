@@ -22,7 +22,6 @@ from .pipeline import (
     finalize_crawl_state,
     write_crawl_outputs,
 )
-from .static_api import publish_static_api
 
 T = TypeVar("T")
 
@@ -255,31 +254,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="stop the crawl on the first repository failure",
     )
-
-    static_api = subparsers.add_parser(
-        "build-static-api",
-        help="build static API/dashboard files from crawler output",
-    )
-    static_api.add_argument("org", help="GitHub organization login, e.g. chutesai")
-    static_api.add_argument(
-        "--data-dir",
-        required=True,
-        help="directory containing crawler output files to publish",
-    )
-    static_api.add_argument(
-        "--site-dir",
-        required=True,
-        help="directory to populate with GitHub Pages static API files",
-    )
-    static_api.add_argument(
-        "--run-label",
-        default="latest",
-        help="published run label/path segment (default: latest)",
-    )
-    static_api.add_argument(
-        "--base-url",
-        help="absolute deployed base URL used in generated manifests",
-    )
     return parser
 
 
@@ -441,19 +415,6 @@ def main(argv: list[str] | None = None) -> int:
         for path in written:
             print(path)
         return 0 if result.run.status in {"success", "partial"} else 1
-
-    if args.command == "build-static-api":
-        result = publish_static_api(
-            org=args.org,
-            data_dir=Path(args.data_dir),
-            site_dir=Path(args.site_dir),
-            run_label=args.run_label,
-            base_url=args.base_url,
-        )
-        print(f"Published static API for {args.org} at {result.dataset_dir}")
-        for path in [*result.copied_files, *result.manifest_files, *result.dashboard_files]:
-            print(path)
-        return 0
 
     if args.command == "crawl-org":
         config = load_config(args.config) if args.config else CrawlerConfig()

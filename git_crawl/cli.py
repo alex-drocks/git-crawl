@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import TypeVar
 
 from .config import CrawlerConfig, load_config
-from .github import list_repositories_from_urls, token_from_env
+from .github import (
+    GitHubAPIError,
+    GitHubURLParseError,
+    list_repositories_from_urls,
+    token_from_env,
+)
 from .pipeline import (
     REF_SCOPE_ALL_REFS,
     REF_SCOPE_DEFAULT_BRANCH,
@@ -216,7 +221,11 @@ def main(argv: list[str] | None = None) -> int:
         if workers < 1:
             parser.error("--workers must be >= 1")
         token = token_from_env(args.token_env)
-        repositories = list_repositories_from_urls(repo_urls, token=token)
+        try:
+            repositories = list_repositories_from_urls(repo_urls, token=token)
+        except (GitHubAPIError, GitHubURLParseError) as exc:
+            print(f"failed to resolve repositories: {exc}", file=sys.stderr)
+            return 1
         result = crawl_repositories(
             target,
             repositories,

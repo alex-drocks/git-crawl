@@ -64,11 +64,23 @@ def test_parse_github_repo_url_normalizes_common_repository_links(raw, owner, re
         "https://gitlab.com/chutesai/api",
         "not a url",
         "https://github.com/chutesai/api/issues/1",
+        "https://github.com/chutesai%2Fextra/api",
+        "https://github.com/chutesai/api%2Fissues",
+        "git@github.com:chutesai/api/issues/1",
     ],
 )
 def test_parse_github_repo_url_rejects_non_repository_links(raw):
     with pytest.raises(GitHubURLParseError):
         parse_github_repo_url(raw)
+
+
+def test_parse_github_repo_url_redacts_userinfo_from_errors():
+    with pytest.raises(GitHubURLParseError) as exc_info:
+        parse_github_repo_url("https://x-access-token:SECRET123@github.com/chutesai/api/issues/1")
+
+    message = str(exc_info.value)
+    assert "SECRET123" not in message
+    assert "x-access-token" not in message
 
 
 def test_get_repository_from_url_fetches_metadata_for_normalized_repo_link():

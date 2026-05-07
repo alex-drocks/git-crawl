@@ -321,7 +321,7 @@ def crawl_org(
         else:
             status = "success"
 
-        if store and finalize_state:
+        if store and finalize_state and _should_update_repo_states_for_status(status):
             _persist_repo_state_updates(
                 store,
                 org=org,
@@ -479,7 +479,7 @@ def crawl_repositories(
         else:
             status = "success"
 
-        if store and finalize_state:
+        if store and finalize_state and _should_update_repo_states_for_status(status):
             _persist_repo_state_updates(
                 store,
                 org=target,
@@ -758,7 +758,7 @@ def finalize_crawl_state(
     store = CrawlStateStore(state_db)
     final_status = status or result.run.status
     final_error = result.run.error_message if error_message is None else error_message
-    if update_repo_states:
+    if update_repo_states and _should_update_repo_states_for_status(final_status):
         _persist_repo_state_updates(
             store,
             org=result.org,
@@ -779,6 +779,10 @@ def finalize_crawl_state(
         error_message=final_error,
     )
     return replace(result, run=run)
+
+
+def _should_update_repo_states_for_status(status: str) -> bool:
+    return status in {"success", "partial"}
 
 
 def _start_run(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import email.utils
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -16,6 +17,8 @@ from .retry import RetryPolicy, sleep_before_retry
 
 GITHUB_API_URL = "https://api.github.com"
 RETRYABLE_HTTP_STATUSES = {429, 500, 502, 503, 504}
+GITHUB_OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
+GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 @dataclass(frozen=True)
@@ -96,23 +99,37 @@ def parse_github_repo_url(raw_url: str) -> GitHubRepoRef:
     not accidentally treat arbitrary GitHub pages as crawl targets.
     """
     raw_url = raw_url.strip()
+    display_url = _safe_url_for_error(raw_url)
     owner: str | None = None
     repo: str | None = None
 
     if raw_url.startswith("git@github.com:"):
         path = raw_url.removeprefix("git@github.com:")
+        _reject_non_repository_subpath(path, display_url)
         owner, repo = _owner_repo_from_path(path)
     else:
         parsed = urllib.parse.urlparse(raw_url)
         host = (parsed.hostname or "").lower()
         if host != "github.com":
-            raise GitHubURLParseError(f"Not a GitHub repository URL: {raw_url!r}")
+            raise GitHubURLParseError(f"Not a GitHub repository URL: {display_url!r}")
         owner, repo = _owner_repo_from_path(parsed.path)
-        _reject_non_repository_subpath(parsed.path, raw_url)
+        _reject_non_repository_subpath(parsed.path, display_url)
 
     if not owner or not repo:
-        raise GitHubURLParseError(f"GitHub repository URL must include owner and repo: {raw_url!r}")
-    return GitHubRepoRef(owner=owner, repo=repo.removesuffix(".git"))
+        raise GitHubURLParseError(f"GitHub repository URL must include owner and repo: {display_url!r}")
+    repo = repo.removesuffix(".git")
+    _validate_owner_repo(owner, repo, display_url)
+    return GitHubRepoRef(owner=owner, repo=repo)
+
+
+def _safe_url_for_error(raw_url: str) -> str:
+    parsed = urllib.parse.urlparse(raw_url)
+    if not parsed.scheme or not parsed.netloc:
+        return raw_url
+    netloc = parsed.hostname or ""
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    return urllib.parse.urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
 
 
 def _owner_repo_from_path(path: str) -> tuple[str | None, str | None]:
@@ -122,13 +139,22 @@ def _owner_repo_from_path(path: str) -> tuple[str | None, str | None]:
     return parts[0], parts[1].removesuffix(".git")
 
 
-def _reject_non_repository_subpath(path: str, raw_url: str) -> None:
+def _reject_non_repository_subpath(path: str, display_url: str) -> None:
     parts = [part for part in path.strip("/").split("/") if part]
     if len(parts) <= 2:
         return
     allowed_context_prefixes = {"tree", "blob", "commit", "releases"}
     if parts[2] not in allowed_context_prefixes:
-        raise GitHubURLParseError(f"Unsupported GitHub repository subpath in URL: {raw_url!r}")
+        raise GitHubURLParseError(f"Unsupported GitHub repository subpath in URL: {display_url!r}")
+
+
+def _validate_owner_repo(owner: str, repo: str, display_url: str) -> None:
+    if "/" in owner or "/" in repo:
+        raise GitHubURLParseError(f"GitHub repository URL contains invalid encoded path separators: {display_url!r}")
+    if not GITHUB_OWNER_RE.fullmatch(owner):
+        raise GitHubURLParseError(f"GitHub repository URL contains an invalid owner name: {display_url!r}")
+    if repo in {".", ".."} or not GITHUB_REPO_RE.fullmatch(repo):
+        raise GitHubURLParseError(f"GitHub repository URL contains an invalid repository name: {display_url!r}")
 
 
 def get_repository(
@@ -150,7 +176,7 @@ def get_repository(
         max_delay=retry_max_delay,
         jitter=retry_jitter,
     )
-    url = f"{api_url.rstrip('/')}/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(repo)}"
+    url = f"{api_url.rstrip('/')}/repos/{urllib.parse.quote(owner, safe='')}/{urllib.parse.quote(repo, safe='')}"
     request = urllib.request.Request(url, headers=_headers(token))
     payload = _request_json(
         request,

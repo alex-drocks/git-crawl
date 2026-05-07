@@ -88,6 +88,27 @@ def test_cli_crawl_repos_loads_manifest_and_delegates_to_explicit_repo_crawler(m
     assert str(tmp_path / "out" / "summary.json") in output
 
 
+def test_cli_crawl_repos_reports_sanitized_repository_resolution_errors(tmp_path, capsys):
+    manifest = tmp_path / "repos.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "target": "bittensor-subnets",
+                "repositories": ["https://x-access-token:SECRET123@github.com/chutesai/api/issues/1"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(["crawl-repos", str(manifest)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "failed to resolve repositories" in captured.err
+    assert "SECRET123" not in captured.err
+    assert "x-access-token" not in captured.err
+
+
 def test_cli_boolean_flags_can_override_true_config_values(monkeypatch, tmp_path):
     config_path = tmp_path / "crawler.toml"
     config_path.write_text(

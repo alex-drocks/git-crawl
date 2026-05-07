@@ -58,6 +58,42 @@ def test_crawl_repositories_uses_full_names_for_cross_owner_repo_identity(monkey
     assert store.get_repo_state(org="bittensor-subnets", repo="api") is None
 
 
+def test_crawl_repositories_does_not_advance_state_for_failed_fail_fast_run(monkeypatch, tmp_path):
+    repos = [
+        _repo_info("chutesai", "api", pushed_at="2026-05-02T00:00:00Z"),
+        _repo_info("chutesai", "web", pushed_at="2026-05-01T00:00:00Z"),
+    ]
+
+    def fake_ensure_mirror(repo, cache_dir, prefer_ssh=False):
+        if repo.name == "web":
+            raise RuntimeError("clone failed")
+        return tmp_path / f"{repo.name}.git"
+
+    monkeypatch.setattr("git_crawl.pipeline.ensure_mirror", fake_ensure_mirror)
+    monkeypatch.setattr("git_crawl.pipeline.get_ref_sha", lambda mirror, ref: "api-newsha")
+    monkeypatch.setattr(
+        "git_crawl.pipeline.read_commit_log",
+        lambda mirror, *, since=None, until=None, revision=None, all_refs=False: (
+            "\x1eapi-commit\x1fAlice Example\x1falice@example.com\x1f"
+            "2026-05-04T10:15:00+00:00\x1f\n"
+            "1\t0\tsrc/app.py\n"
+        ),
+    )
+
+    state_db = tmp_path / "state.sqlite"
+    result = crawl_repositories(
+        "bittensor-subnets",
+        repos,
+        cache_dir=tmp_path / "mirrors",
+        state_db=state_db,
+        fail_fast=True,
+    )
+
+    assert result.run.status == "failed"
+    assert [failure.repo for failure in result.failed_repositories] == ["chutesai/web"]
+    assert CrawlStateStore(state_db).get_repo_state(org="bittensor-subnets", repo="chutesai/api") is None
+
+
 def test_crawl_org_defaults_to_default_branch_and_updates_sqlite_state(monkeypatch, tmp_path):
     repo = RepoInfo(
         name="api",

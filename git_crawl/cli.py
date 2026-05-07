@@ -374,7 +374,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--workers must be >= 1")
         token = token_from_env(args.token_env)
         try:
-            repositories = list_repositories_from_urls(repo_urls, token=token)
+            repositories = list_repositories_from_urls(repo_urls, token=token, max_repos=max_repos)
         except (GitHubAPIError, GitHubURLParseError) as exc:
             print(f"failed to resolve repositories: {exc}", file=sys.stderr)
             return 1

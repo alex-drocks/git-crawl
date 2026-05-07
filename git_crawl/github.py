@@ -194,16 +194,39 @@ def get_repository_from_url(raw_url: str, **kwargs: object) -> RepoInfo:
     return get_repository(ref.owner, ref.repo, **kwargs)
 
 
-def list_repositories_from_urls(urls: Iterable[str], **kwargs: object) -> list[RepoInfo]:
-    """Fetch repository metadata for normalized GitHub repository URLs, de-duplicated by full name."""
+def list_repositories_from_urls(
+    urls: Iterable[str],
+    *,
+    max_repos: int | None = None,
+    **kwargs: object,
+) -> list[RepoInfo]:
+    """Fetch repository metadata for normalized GitHub repository URLs.
+
+    URLs are de-duplicated before API lookups, and ``max_repos`` limits the
+    number of unique repositories resolved. This lets callers smoke-test large
+    manifests without failing on inaccessible repositories that appear later in
+    the manifest.
+    """
+    if max_repos is not None and max_repos < 1:
+        raise ValueError("max_repos must be >= 1")
+
     repos: list[RepoInfo] = []
+    seen_requested_repos: set[str] = set()
     seen_full_names: set[str] = set()
     for raw_url in urls:
-        repo = get_repository_from_url(raw_url, **kwargs)
-        if repo.full_name in seen_full_names:
+        ref = parse_github_repo_url(raw_url)
+        requested_key = ref.full_name.lower()
+        if requested_key in seen_requested_repos:
+            continue
+        repo = get_repository(ref.owner, ref.repo, **kwargs)
+        seen_requested_repos.add(requested_key)
+        full_name_key = repo.full_name.lower()
+        if full_name_key in seen_full_names:
             continue
         repos.append(repo)
-        seen_full_names.add(repo.full_name)
+        seen_full_names.add(full_name_key)
+        if max_repos is not None and len(repos) >= max_repos:
+            break
     return repos
 
 

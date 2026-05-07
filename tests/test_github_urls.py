@@ -1,4 +1,5 @@
 import json
+import urllib.error
 import urllib.parse
 
 import pytest
@@ -6,6 +7,7 @@ import pytest
 from git_crawl.github import (
     GitHubURLParseError,
     get_repository_from_url,
+    list_repositories_from_urls,
     parse_github_repo_url,
 )
 
@@ -100,3 +102,31 @@ def test_get_repository_from_url_fetches_metadata_for_normalized_repo_link():
     assert repo.full_name == "chutesai/api"
     parsed_url = urllib.parse.urlparse(requested_urls[0])
     assert parsed_url.path == "/repos/chutesai/api"
+
+
+def test_list_repositories_from_urls_stops_after_max_unique_repositories_before_later_404s():
+    requested_paths = []
+
+    def fake_urlopen(request, timeout):
+        parsed_url = urllib.parse.urlparse(request.full_url)
+        requested_paths.append(parsed_url.path)
+        if parsed_url.path == "/repos/dead/missing":
+            raise urllib.error.HTTPError(request.full_url, 404, "Not Found", hdrs={}, fp=None)
+        owner, name = parsed_url.path.removeprefix("/repos/").split("/", 1)
+        return FakeResponse(json.dumps(_repo_payload(owner=owner, name=name)).encode("utf-8"))
+
+    repos = list_repositories_from_urls(
+        [
+            "https://github.com/alice/api",
+            "https://github.com/alice/api",
+            "https://github.com/bob/web",
+            "https://github.com/dead/missing",
+        ],
+        max_repos=2,
+        urlopen=fake_urlopen,
+        max_attempts=1,
+        retry_delay=0,
+    )
+
+    assert [repo.full_name for repo in repos] == ["alice/api", "bob/web"]
+    assert requested_paths == ["/repos/alice/api", "/repos/bob/web"]

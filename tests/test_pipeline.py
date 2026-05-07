@@ -61,6 +61,46 @@ def test_crawl_owner_discovers_org_or_user_repos_and_uses_full_repo_identity(mon
     assert store.get_repo_state(org="alice", repo="portfolio") is None
 
 
+def test_crawl_owner_can_use_subnet_target_label_while_discovering_owner_repositories(monkeypatch, tmp_path):
+    repo = _repo_info("chutesai", "api", pushed_at="2026-05-02T00:00:00Z")
+    captured = {}
+
+    def fake_list_owner_repositories(owner, **kwargs):
+        captured["owner"] = owner
+        captured["owner_kwargs"] = kwargs
+        return [repo]
+
+    monkeypatch.setattr("git_crawl.pipeline.list_owner_repositories", fake_list_owner_repositories)
+    monkeypatch.setattr("git_crawl.pipeline.ensure_mirror", lambda repo, cache_dir, prefer_ssh=False: tmp_path / repo.full_name)
+    monkeypatch.setattr("git_crawl.pipeline.get_ref_sha", lambda mirror, ref: "newsha")
+    monkeypatch.setattr(
+        "git_crawl.pipeline.read_commit_log",
+        lambda mirror, *, since=None, until=None, revision=None, all_refs=False: (
+            "\x1enewsha\x1fChutes Dev\x1fdev@chutes.ai\x1f"
+            "2026-05-04T10:15:00+00:00\x1f\n"
+            "1\t0\tREADME.md\n"
+        ),
+    )
+
+    state_db = tmp_path / "state.sqlite"
+    result = crawl_owner(
+        "chutesai",
+        target="bittensor-subnet-64",
+        cache_dir=tmp_path / "mirrors",
+        state_db=state_db,
+        owner_type="org",
+    )
+
+    assert captured["owner"] == "chutesai"
+    assert captured["owner_kwargs"]["owner_type"] == "org"
+    assert result.org == "bittensor-subnet-64"
+    assert [row.org for row in result.raw_commits] == ["bittensor-subnet-64"]
+    assert [row.repo for row in result.raw_commits] == ["chutesai/api"]
+    store = CrawlStateStore(state_db)
+    assert store.get_repo_state(org="bittensor-subnet-64", repo="chutesai/api") is not None
+    assert store.get_repo_state(org="chutesai", repo="chutesai/api") is None
+
+
 def test_crawl_repositories_uses_full_names_for_cross_owner_repo_identity(monkeypatch, tmp_path):
     repos = [
         _repo_info("alice", "api", pushed_at="2026-05-02T00:00:00Z"),

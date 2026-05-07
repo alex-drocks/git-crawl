@@ -108,6 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     crawl_owner_parser = subparsers.add_parser("crawl-owner", help="crawl one GitHub owner (organization or user)")
     crawl_owner_parser.add_argument("owner", help="GitHub owner login, e.g. chutesai or torvalds")
+    crawl_owner_parser.add_argument("--target", help="crawl target label for output rows/state (default: owner login)")
     crawl_owner_parser.add_argument(
         "--owner-type",
         choices=["auto", "org", "user"],
@@ -303,6 +304,7 @@ def main(argv: list[str] | None = None) -> int:
                 cache_dir=Path(_pick(args.cache_dir, None, ".cache/git-crawl")),
                 token=token,
                 owner_type=args.owner_type,
+                target=args.target,
                 active_since=_pick(args.active_since, None, None),
                 since=_pick(args.since, None, None),
                 until=_pick(args.until, None, None),
@@ -341,8 +343,12 @@ def main(argv: list[str] | None = None) -> int:
 
         if state_db:
             result = finalize_crawl_state(result, state_db)
+        if args.target:
+            print_prefix = f"Crawled {len(result.repositories)} repos for target {result.org} from owner {args.owner}"
+        else:
+            print_prefix = f"Crawled {len(result.repositories)} repos for owner {result.org}"
         print(
-            f"Crawled {len(result.repositories)} repos for owner {result.org}: "
+            f"{print_prefix}: "
             f"{len(result.commits)} commits, "
             f"{len(result.file_changes)} file-change rows, "
             f"{len(result.aggregates.org_days)} target-day rows, "

@@ -18,7 +18,7 @@ The GitHub API is still used for public repository discovery and metadata.
 ## Crawl modes
 
 - `crawl-org`: discover and crawl selected repositories from one GitHub organization, preserving legacy short repo names in raw rows and state.
-- `crawl-owner`: discover and crawl selected repositories from a GitHub owner root. It tries organization discovery first, falls back to user discovery when the org does not exist, and uses full `owner/repo` repository identity in raw rows and state.
+- `crawl-owner`: discover and crawl selected repositories from a GitHub owner root. It tries organization discovery first, falls back to user discovery when the org does not exist, and uses full `owner/repo` repository identity in raw rows and state. Pass `--target` when the owner is only the discovery source and output rows/state should belong to another target, such as `bittensor-subnet-64`.
 - `crawl-repos`: crawl an explicit manifest of GitHub repository URLs. This is the preferred integration point for adapters such as a future `tao-git-crawl`, because exact repo links stay exact and are not expanded into unrelated owner-wide crawls.
 
 ## Quick start
@@ -43,6 +43,13 @@ git-crawl crawl-owner torvalds \
   --max-repos 1 \
   --since 2026-01-01 \
   --output-dir out/torvalds-smoke
+
+# Crawl an owner, but label output/state as a subnet target.
+git-crawl crawl-owner chutesai \
+  --target bittensor-subnet-64 \
+  --owner-type org \
+  --since 2026-01-01 \
+  --output-dir out/bittensor-subnet-64
 ```
 
 ## Explicit repository manifests

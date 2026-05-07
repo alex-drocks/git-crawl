@@ -41,3 +41,9 @@ jobs:
         run: python -m compileall -q git_crawl
       - name: Run tests
         run: python -m pytest tests -q
+      - name: Install build backend
+        run: python -m pip install build
+      - name: Build sdist and wheel
+        run: python -m build
+      - name: Smoke install wheel in clean consumer venv
+        run: python scripts/smoke_consumer_install.py dist/*.whl

@@ -238,6 +238,7 @@ def crawl_owner(
     cache_dir: str | Path,
     token: str | None = None,
     owner_type: str = "auto",
+    target: str | None = None,
     active_since: str | None = None,
     since: str | None = None,
     until: str | None = None,
@@ -254,11 +255,12 @@ def crawl_owner(
     """Crawl repositories for a GitHub owner root, resolving orgs or users.
 
     Repository identity uses stable ``owner/repo`` full names so downstream
-    packages can safely merge outputs from multiple owners.
+    packages can safely merge outputs from multiple owners. Pass ``target`` to
+    label output rows/state as a caller-owned target such as a Bittensor subnet.
     """
     repositories = list_owner_repositories(owner, owner_type=owner_type, token=token)
     return crawl_repositories(
-        owner,
+        target or owner,
         repositories,
         cache_dir=cache_dir,
         active_since=active_since,

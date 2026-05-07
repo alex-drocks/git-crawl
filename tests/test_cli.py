@@ -29,7 +29,7 @@ def test_cli_crawl_owner_delegates_to_owner_crawler(monkeypatch, tmp_path, capsy
         captured["owner"] = owner
         captured["crawl_kwargs"] = kwargs
         return SimpleNamespace(
-            org=owner,
+            org=kwargs.get("target") or owner,
             run=SimpleNamespace(run_id="run-owner", status="success"),
             repositories=[repo],
             commits=[],
@@ -48,6 +48,8 @@ def test_cli_crawl_owner_delegates_to_owner_crawler(monkeypatch, tmp_path, capsy
             "alice",
             "--owner-type",
             "user",
+            "--target",
+            "bittensor-subnet-64",
             "--output-dir",
             str(tmp_path / "out"),
             "--cache-dir",
@@ -62,10 +64,11 @@ def test_cli_crawl_owner_delegates_to_owner_crawler(monkeypatch, tmp_path, capsy
     output = capsys.readouterr().out
     assert exit_code == 0
     assert captured["owner"] == "alice"
+    assert captured["crawl_kwargs"]["target"] == "bittensor-subnet-64"
     assert captured["crawl_kwargs"]["owner_type"] == "user"
     assert captured["crawl_kwargs"]["workers"] == 2
     assert captured["crawl_kwargs"]["state_db"] == str(tmp_path / "state.sqlite")
-    assert "Crawled 1 repos for owner alice" in output
+    assert "Crawled 1 repos for target bittensor-subnet-64 from owner alice" in output
     assert str(tmp_path / "out" / "summary.json") in output
 
 

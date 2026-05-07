@@ -19,7 +19,7 @@ One raw commits row represents one parsed Git commit included by the crawl's ref
 Fields:
 
 - `run_id`: crawl run identifier.
-- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
+- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login or CLI `--target` value; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
 - `repo`: repository identity. For `crawl-org`, this is the short repository name within the org; for `crawl-owner` and `crawl-repos`, this is the full `owner/repo` name to avoid cross-owner collisions.
 - `sha`: commit SHA.
 - `parents`: space-separated parent SHAs.
@@ -40,7 +40,7 @@ One file changes row represents one `git log --numstat` file row for an included
 Fields:
 
 - `run_id`: crawl run identifier.
-- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
+- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login or CLI `--target` value; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
 - `repo`: repository identity. For `crawl-org`, this is the short repository name within the org; for `crawl-owner` and `crawl-repos`, this is the full `owner/repo` name to avoid cross-owner collisions.
 - `sha`: commit SHA.
 - `path`: changed path as emitted by Git numstat.
@@ -58,7 +58,7 @@ One `repositories` row represents one selected repository for one crawl run.
 Fields:
 
 - `run_id`: crawl run identifier.
-- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
+- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login or CLI `--target` value; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
 - `name`: short repository name.
 - `full_name`: GitHub `owner/name` repository identifier.
 - `clone_url`: HTTPS clone URL from GitHub.
@@ -85,7 +85,7 @@ The file is still named `org_days` for schema compatibility. One `org_days` row 
 Fields:
 
 - `run_id`: crawl run identifier.
-- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
+- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login or CLI `--target` value; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
 - `date`: UTC date derived from Git author timestamps.
 - `commits`: count of unique `(repo, commit SHA)` pairs included for that target/date.
 - `unique_contributors`: count of distinct contributor identities across all selected repositories for that target/date. Identity is normalized `author_login` when available, else lower-cased `author_email`, else `author_name`; contributors active in multiple repositories on the same UTC date are counted once.
@@ -100,7 +100,7 @@ One `repo_days` row represents one repository on one UTC date.
 Fields:
 
 - `run_id`: crawl run identifier.
-- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
+- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login or CLI `--target` value; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
 - `repo`: repository identity. For `crawl-org`, this is the short repository name within the org; for `crawl-owner` and `crawl-repos`, this is the full `owner/repo` name to avoid cross-owner collisions.
 - `date`: UTC date derived from Git author timestamps.
 - `commits`: count of unique commit SHAs included for that repo/date.
@@ -118,7 +118,7 @@ lower-cased `author_email`, else `author_name`.
 Fields:
 
 - `run_id`: crawl run identifier.
-- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
+- `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login or CLI `--target` value; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
 - `repo`: repository identity. For `crawl-org`, this is the short repository name within the org; for `crawl-owner` and `crawl-repos`, this is the full `owner/repo` name to avoid cross-owner collisions.
 - `date`: UTC date derived from Git author timestamps.
 - `author_name`: Git author name for this contributor bucket.

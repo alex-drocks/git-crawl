@@ -344,7 +344,140 @@ def list_org_repositories(
 ) -> list[RepoInfo]:
     """List organization repositories via REST pagination, requesting public repos by default."""
     if repo_type not in {"public", "all", "member", "private", "forks", "sources"}:
-        raise ValueError(f"Unsupported GitHub repository type: {repo_type}")
+        raise ValueError(f"Unsupported GitHub organization repository type: {repo_type}")
+    return _list_repositories_for_owner_path(
+        owner=org,
+        owner_path="orgs",
+        token=token,
+        api_url=api_url,
+        per_page=per_page,
+        repo_type=repo_type,
+        urlopen=urlopen,
+        max_attempts=max_attempts,
+        retry_delay=retry_delay,
+        retry_max_delay=retry_max_delay,
+        retry_jitter=retry_jitter,
+    )
+
+
+def list_user_repositories(
+    user: str,
+    *,
+    token: str | None = None,
+    api_url: str = GITHUB_API_URL,
+    per_page: int = 100,
+    repo_type: str = "owner",
+    urlopen: Callable[..., object] | None = None,
+    max_attempts: int = 3,
+    retry_delay: float = 1.0,
+    retry_max_delay: float = 60.0,
+    retry_jitter: float = 0.25,
+) -> list[RepoInfo]:
+    """List repositories for a GitHub user login via REST pagination."""
+    if repo_type not in {"all", "owner", "member"}:
+        raise ValueError(f"Unsupported GitHub user repository type: {repo_type}")
+    return _list_repositories_for_owner_path(
+        owner=user,
+        owner_path="users",
+        token=token,
+        api_url=api_url,
+        per_page=per_page,
+        repo_type=repo_type,
+        urlopen=urlopen,
+        max_attempts=max_attempts,
+        retry_delay=retry_delay,
+        retry_max_delay=retry_max_delay,
+        retry_jitter=retry_jitter,
+    )
+
+
+def list_owner_repositories(
+    owner: str,
+    *,
+    owner_type: str = "auto",
+    token: str | None = None,
+    api_url: str = GITHUB_API_URL,
+    per_page: int = 100,
+    urlopen: Callable[..., object] | None = None,
+    max_attempts: int = 3,
+    retry_delay: float = 1.0,
+    retry_max_delay: float = 60.0,
+    retry_jitter: float = 0.25,
+) -> list[RepoInfo]:
+    """List repositories for a GitHub owner root, accepting org or user logins.
+
+    ``owner_type='auto'`` tries the organization endpoint first, then falls back
+    to the public user endpoint only when GitHub reports the org was not found.
+    """
+    if owner_type == "org":
+        return list_org_repositories(
+            owner,
+            token=token,
+            api_url=api_url,
+            per_page=per_page,
+            urlopen=urlopen,
+            max_attempts=max_attempts,
+            retry_delay=retry_delay,
+            retry_max_delay=retry_max_delay,
+            retry_jitter=retry_jitter,
+        )
+    if owner_type == "user":
+        return list_user_repositories(
+            owner,
+            token=token,
+            api_url=api_url,
+            per_page=per_page,
+            urlopen=urlopen,
+            max_attempts=max_attempts,
+            retry_delay=retry_delay,
+            retry_max_delay=retry_max_delay,
+            retry_jitter=retry_jitter,
+        )
+    if owner_type != "auto":
+        raise ValueError("owner_type must be one of 'auto', 'org', or 'user'")
+
+    try:
+        return list_org_repositories(
+            owner,
+            token=token,
+            api_url=api_url,
+            per_page=per_page,
+            urlopen=urlopen,
+            max_attempts=max_attempts,
+            retry_delay=retry_delay,
+            retry_max_delay=retry_max_delay,
+            retry_jitter=retry_jitter,
+        )
+    except GitHubAPIError as error:
+        if error.status_code != 404:
+            raise
+    return list_user_repositories(
+        owner,
+        token=token,
+        api_url=api_url,
+        per_page=per_page,
+        urlopen=urlopen,
+        max_attempts=max_attempts,
+        retry_delay=retry_delay,
+        retry_max_delay=retry_max_delay,
+        retry_jitter=retry_jitter,
+    )
+
+
+def _list_repositories_for_owner_path(
+    *,
+    owner: str,
+    owner_path: str,
+    token: str | None,
+    api_url: str,
+    per_page: int,
+    repo_type: str,
+    urlopen: Callable[..., object] | None,
+    max_attempts: int,
+    retry_delay: float,
+    retry_max_delay: float,
+    retry_jitter: float,
+) -> list[RepoInfo]:
     if per_page < 1 or per_page > 100:
         raise ValueError("per_page must be between 1 and 100 for GitHub REST pagination")
     if max_attempts < 1:
@@ -370,7 +503,8 @@ def list_org_repositories(
                 "direction": "asc",
             }
         )
-        url = f"{api_url.rstrip('/')}/orgs/{urllib.parse.quote(org)}/repos?{query}"
+        encoded_owner = urllib.parse.quote(owner, safe="")
+        url = f"{api_url.rstrip('/')}/{owner_path}/{encoded_owner}/repos?{query}"
         request = urllib.request.Request(url, headers=_headers(token))
         payload = _request_json(
             request,
@@ -379,7 +513,7 @@ def list_org_repositories(
         )
 
         if not isinstance(payload, list):
-            raise GitHubAPIError(f"Unexpected GitHub repository response for {org}: {payload!r}", url=url)
+            raise GitHubAPIError(f"Unexpected GitHub repository response for {owner}: {payload!r}", url=url)
 
         for item in payload:
             repo = _repo_from_api(item)

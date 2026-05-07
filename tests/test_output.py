@@ -163,6 +163,7 @@ def test_write_crawl_outputs_includes_org_days_and_run_scoped_repositories(tmp_p
     assert tmp_path / "excluded_repositories.csv" in written
     assert tmp_path / "summary.json" in written
     assert tmp_path / "summary.md" in written
+    assert tmp_path / "output_manifest.json" in written
     assert [json.loads(line) for line in (tmp_path / "org_days.jsonl").read_text().splitlines()] == [
         {
             "run_id": "run-1",
@@ -226,6 +227,8 @@ def test_write_crawl_outputs_includes_org_days_and_run_scoped_repositories(tmp_p
     assert file_changes[0]["is_lockfile"] is False
 
     summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["schema_version"] == "git-crawl-summary-v1"
+    assert summary["output_schema_version"] == "git-crawl-output-v1"
     assert summary["org"] == "chutesai"
     assert summary["totals"]["commits"] == 1
     assert summary["totals"]["lines_added"] == 3
@@ -235,6 +238,37 @@ def test_write_crawl_outputs_includes_org_days_and_run_scoped_repositories(tmp_p
     assert "raw git churn" in summary_md
     assert "Calendar averages" in summary_md
     assert "Per calendar day" in summary_md
+
+    manifest = json.loads((tmp_path / "output_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["manifest_version"] == "git-crawl-output-manifest-v1"
+    assert manifest["output_schema_version"] == "git-crawl-output-v1"
+    assert manifest["run"] == {"run_id": "run-1", "status": "success", "target": "chutesai"}
+    assert manifest["datasets"]["commits"] == {
+        "schema_version": "git-crawl-commits-v1",
+        "jsonl": "commits.jsonl",
+        "csv": "commits.csv",
+        "fields": [
+            "run_id",
+            "org",
+            "repo",
+            "sha",
+            "parents",
+            "parent_count",
+            "is_merge_commit",
+            "author_name",
+            "author_email",
+            "author_login",
+            "authored_at",
+            "files_changed",
+            "lines_added",
+            "lines_deleted",
+        ],
+    }
+    assert manifest["datasets"]["summary"] == {
+        "schema_version": "git-crawl-summary-v1",
+        "json": "summary.json",
+        "fields": None,
+    }
 
 
 def test_crawl_summary_includes_calendar_average_rates_for_sparse_date_range():

@@ -21,6 +21,7 @@ CRAWLER_OUTPUT_FILES: tuple[str, ...] = (
     "repo_failures.jsonl",
     "summary.json",
     "summary.md",
+    "output_manifest.json",
     "crawl_runs.csv",
     "repositories.csv",
     "excluded_repositories.csv",
@@ -92,9 +93,11 @@ def publish_static_api(
         raise ValueError(f"no known crawler output files found in {data_dir}")
 
     summary = _read_json_object(dataset_dir / "summary.json")
+    output_manifest = _read_json_object(dataset_dir / "output_manifest.json")
     dashboard_endpoint = _endpoint(f"/{org}/{run_label}/dashboard.html", normalized_base_url)
     latest_manifest = {
         "api_version": 1,
+        "output_schema_version": output_manifest.get("output_schema_version") or summary.get("output_schema_version"),
         "org": org,
         "run_label": run_label,
         "generated_at": generated_at_text,
@@ -105,6 +108,9 @@ def publish_static_api(
         "dashboard": dashboard_endpoint,
         "summary": _endpoint(f"/{org}/{run_label}/summary.json", normalized_base_url)
         if "summary.json" in file_entries
+        else None,
+        "output_manifest": _endpoint(f"/{org}/{run_label}/output_manifest.json", normalized_base_url)
+        if "output_manifest.json" in file_entries
         else None,
         "files": file_entries,
     }

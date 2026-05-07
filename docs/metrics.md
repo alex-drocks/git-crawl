@@ -76,7 +76,7 @@ One `excluded_repositories` row represents one discovered repository that was no
 
 - `exclusion_reason`: one of `private`, `archived`, `fork`, `inactive_before_active_since`, or `over_max_repos`.
 
-This table lets dashboards reconcile GitHub's discovered repository count with the number of repositories actually crawled.
+This table lets downstream consumers reconcile GitHub's discovered repository count with the number of repositories actually crawled.
 
 ## Target-day aggregates
 
@@ -134,7 +134,7 @@ Fields:
 
 When a SQLite state database is configured and `ref_scope = "default-branch"`, Git Crawl stores the last successfully crawled default branch SHA per repository and history window. On the next successful run with the same default branch, `--since`, and `--until` values, it reads the Git range `previous_sha..current_sha` instead of the full default branch history. If the branch or history window changes, or if the previous SHA is missing from the mirror after a cache rebuild or force-push, the crawler falls back to a full read of the current default branch scope. State databases created before history-window tracking are treated as unknown provenance and get one full read before new incremental state is trusted. In CLI runs, repository state is advanced only after output files are written successfully; output failures mark the run failed without updating repository SHAs.
 
-Incremental outputs are run-scoped: rows emitted in a run describe the commits processed during that run, not a full historical replacement table. Downstream consumers should use `run_id` and the raw commits/file changes tables for lineage and deduplication. If a run has `status = "partial"` or `status = "failed"`, `org_days`, `repo_days`, and `contributor_days` include only successfully crawled repositories; dashboards should join `crawl_runs` and `repo_failures` before treating org-level metrics as complete.
+Incremental outputs are run-scoped: rows emitted in a run describe the commits processed during that run, not a full historical replacement table. Downstream consumers should use `run_id` and the raw commits/file changes tables for lineage and deduplication. If a run has `status = "partial"` or `status = "failed"`, `org_days`, `repo_days`, and `contributor_days` include only successfully crawled repositories; consumers should join `crawl_runs` and `repo_failures` before treating org-level metrics as complete.
 
 ## Summary reports
 

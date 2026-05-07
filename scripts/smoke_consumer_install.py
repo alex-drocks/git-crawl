@@ -54,9 +54,12 @@ def main(argv: list[str] | None = None) -> int:
             raise AssertionError(f"unexpected parsed repo from installed package: {payload}")
 
         help_result = _run([str(git_crawl), "--help"])
-        for expected in ["crawl-org", "crawl-repos", "build-static-api"]:
+        for expected in ["crawl-org", "crawl-owner", "crawl-repos"]:
             if expected not in help_result.stdout:
                 raise AssertionError(f"installed CLI help is missing {expected!r}")
+        for removed in ["build-static-api", "dashboard"]:
+            if removed in help_result.stdout.lower():
+                raise AssertionError(f"installed CLI help still exposes removed reporting surface {removed!r}")
 
         print(
             json.dumps(

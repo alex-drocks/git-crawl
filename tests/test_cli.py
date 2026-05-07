@@ -10,6 +10,19 @@ from git_crawl.github import RepoInfo
 from git_crawl.state import CrawlStateStore
 
 
+def test_cli_help_exposes_only_data_crawl_commands(capsys):
+    with pytest.raises(SystemExit) as help_exit:
+        main(["--help"])
+
+    assert help_exit.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "crawl-org" in help_text
+    assert "crawl-owner" in help_text
+    assert "crawl-repos" in help_text
+    assert "build-static-api" not in help_text
+    assert "dashboard" not in help_text.lower()
+
+
 def test_cli_crawl_owner_delegates_to_owner_crawler(monkeypatch, tmp_path, capsys):
     repo = RepoInfo(
         name="portfolio",
@@ -376,52 +389,3 @@ def test_cli_rejects_non_positive_integer_options_before_crawling():
     with pytest.raises(SystemExit) as max_repos_exit:
         main(["crawl-org", "chutesai", "--max-repos", "0"])
     assert max_repos_exit.value.code == 2
-
-
-def test_cli_build_static_api_delegates_to_publisher(monkeypatch, tmp_path, capsys):
-    data_dir = tmp_path / "crawl-out"
-    site_dir = tmp_path / "site"
-    copied_file = site_dir / "chutesai" / "latest" / "summary.json"
-    manifest_file = site_dir / "api" / "chutesai" / "latest.json"
-    dashboard_file = site_dir / "chutesai" / "latest" / "dashboard.html"
-    captured = {}
-
-    def fake_publish_static_api(**kwargs):
-        captured.update(kwargs)
-        return SimpleNamespace(
-            dataset_dir=site_dir / "chutesai" / "latest",
-            copied_files=[copied_file],
-            manifest_files=[manifest_file],
-            dashboard_files=[dashboard_file],
-        )
-
-    monkeypatch.setattr("git_crawl.cli.publish_static_api", fake_publish_static_api, raising=False)
-
-    exit_code = main(
-        [
-            "build-static-api",
-            "chutesai",
-            "--data-dir",
-            str(data_dir),
-            "--site-dir",
-            str(site_dir),
-            "--run-label",
-            "latest",
-            "--base-url",
-            "https://alex-drocks.github.io/git-crawl",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert captured == {
-        "org": "chutesai",
-        "data_dir": data_dir,
-        "site_dir": site_dir,
-        "run_label": "latest",
-        "base_url": "https://alex-drocks.github.io/git-crawl",
-    }
-    assert "Published static API for chutesai at" in output
-    assert str(copied_file) in output
-    assert str(manifest_file) in output
-    assert str(dashboard_file) in output

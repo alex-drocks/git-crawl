@@ -147,6 +147,83 @@ def test_cli_crawl_repos_loads_manifest_and_delegates_to_explicit_repo_crawler(m
     assert str(tmp_path / "out" / "summary.json") in output
 
 
+def test_cli_crawl_repos_passes_max_repos_to_manifest_resolution(monkeypatch, tmp_path, capsys):
+    manifest_path = tmp_path / "repos.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "target": "bittensor-subnets",
+                "repositories": [
+                    "https://github.com/alice/api",
+                    "https://github.com/bob/web",
+                    "https://github.com/dead/missing",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    repos = [
+        RepoInfo(
+            name="api",
+            full_name="alice/api",
+            clone_url="https://github.com/alice/api.git",
+            ssh_url="git@github.com:alice/api.git",
+            default_branch="main",
+            pushed_at="2026-05-01T00:00:00Z",
+            archived=False,
+            fork=False,
+            private=False,
+            language="Python",
+        ),
+        RepoInfo(
+            name="web",
+            full_name="bob/web",
+            clone_url="https://github.com/bob/web.git",
+            ssh_url="git@github.com:bob/web.git",
+            default_branch="main",
+            pushed_at="2026-05-01T00:00:00Z",
+            archived=False,
+            fork=False,
+            private=False,
+            language="TypeScript",
+        ),
+    ]
+    captured = {}
+
+    def fake_list_repositories_from_urls(urls, **kwargs):
+        captured["urls"] = list(urls)
+        captured["resolve_kwargs"] = kwargs
+        return repos
+
+    def fake_crawl_repositories(target, repositories, **kwargs):
+        captured["crawl_kwargs"] = kwargs
+        return SimpleNamespace(
+            org=target,
+            run=SimpleNamespace(run_id="run-1", status="success"),
+            repositories=repositories,
+            commits=[],
+            file_changes=[],
+            aggregates=SimpleNamespace(repo_days=[], contributor_days=[], org_days=[]),
+            failed_repositories=[],
+        )
+
+    monkeypatch.setattr("git_crawl.cli.list_repositories_from_urls", fake_list_repositories_from_urls)
+    monkeypatch.setattr("git_crawl.cli.crawl_repositories", fake_crawl_repositories)
+    monkeypatch.setattr("git_crawl.cli.write_crawl_outputs", lambda *args, **kwargs: [tmp_path / "out" / "summary.json"])
+
+    exit_code = main(["crawl-repos", str(manifest_path), "--max-repos", "2"])
+
+    assert exit_code == 0
+    assert captured["urls"] == [
+        "https://github.com/alice/api",
+        "https://github.com/bob/web",
+        "https://github.com/dead/missing",
+    ]
+    assert captured["resolve_kwargs"]["max_repos"] == 2
+    assert captured["crawl_kwargs"]["max_repos"] == 2
+    assert "Crawled 2 repos for bittensor-subnets" in capsys.readouterr().out
+
+
 def test_cli_crawl_repos_reports_sanitized_repository_resolution_errors(tmp_path, capsys):
     manifest = tmp_path / "repos.json"
     manifest.write_text(

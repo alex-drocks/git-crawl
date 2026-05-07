@@ -239,7 +239,7 @@ def test_cli_crawl_repos_end_to_end_uses_full_repo_keys_and_publishes_static_das
     )
     monkeypatch.setattr(
         "git_crawl.cli.list_repositories_from_urls",
-        lambda urls, token=None: [_repo_info(local_git_repo.path)],
+        lambda urls, **kwargs: [_repo_info(local_git_repo.path)],
     )
 
     output_dir = tmp_path / "explicit-out"

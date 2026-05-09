@@ -2,9 +2,50 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC
+from enum import Enum
 from typing import Iterable
 
 from .gitlog import CommitRecord
+from .path_classification import GENERATED_LIKE_CLASSES, classify_path
+
+
+class CommitChangesFiltrationLevel(str, Enum):
+    """How aggressively to filter noisy file changes when aggregating commit statistics."""
+
+    ALL = "all"
+    NON_BINARY = "non_binary"
+    SOURCE_LIKE = "source_like"
+
+
+def _keep_change(change, level):
+    if level == CommitChangesFiltrationLevel.ALL:
+        return True
+    if change.is_binary:
+        return False
+    if level == CommitChangesFiltrationLevel.NON_BINARY:
+        return True
+    classification = classify_path(change.path, is_binary=change.is_binary)
+    return classification.path_class not in GENERATED_LIKE_CLASSES
+
+
+def filter_commit_changes(commits, level):
+    """Return a copy of commits with file changes filtered by the given level."""
+    result = []
+    for commit in commits:
+        kept = [c for c in commit.changes if _keep_change(c, level)]
+        result.append(
+            CommitRecord(
+                repo=commit.repo,
+                sha=commit.sha,
+                author_name=commit.author_name,
+                author_email=commit.author_email,
+                author_login=commit.author_login,
+                authored_at=commit.authored_at,
+                parents=commit.parents,
+                changes=kept,
+            )
+        )
+    return result
 
 
 @dataclass(frozen=True)

@@ -11,7 +11,7 @@ from pathlib import Path
 from .git_backend import commit_exists, ensure_mirror, get_ref_sha, read_commit_log
 from .github import RepoInfo, RepositoryExclusion, list_org_repositories, list_owner_repositories, partition_repositories
 from .gitlog import CommitRecord, parse_git_log
-from .metrics import AggregateResult, aggregate_daily
+from .metrics import AggregateResult, CommitChangesFiltrationLevel, aggregate_daily, filter_commit_changes
 from .output import write_csv, write_jsonl
 from .raw import CommitRow, FileChangeRow, build_raw_rows
 from .redaction import redact_text, redact_url_credentials
@@ -232,6 +232,9 @@ class CrawlResult:
     excluded_repositories: list[ExcludedRepositoryRow] = field(default_factory=list)
 
 
+DEFAULT_COMMIT_CHANGES_FILTRATION_LEVEL = CommitChangesFiltrationLevel.SOURCE_LIKE
+
+
 def crawl_owner(
     owner: str,
     *,
@@ -251,6 +254,7 @@ def crawl_owner(
     workers: int = 1,
     fail_fast: bool = False,
     finalize_state: bool = True,
+    commit_changes_filtration_level: CommitChangesFiltrationLevel = DEFAULT_COMMIT_CHANGES_FILTRATION_LEVEL,
 ) -> CrawlResult:
     """Crawl repositories for a GitHub owner root, resolving orgs or users.
 
@@ -275,6 +279,7 @@ def crawl_owner(
         workers=workers,
         fail_fast=fail_fast,
         finalize_state=finalize_state,
+        commit_changes_filtration_level=commit_changes_filtration_level,
     )
 
 
@@ -295,6 +300,7 @@ def crawl_org(
     workers: int = 1,
     fail_fast: bool = False,
     finalize_state: bool = True,
+    commit_changes_filtration_level: CommitChangesFiltrationLevel = DEFAULT_COMMIT_CHANGES_FILTRATION_LEVEL,
 ) -> CrawlResult:
     """Crawl selected public repositories for one GitHub org and aggregate git history."""
     if ref_scope not in REF_SCOPES:
@@ -369,8 +375,9 @@ def crawl_org(
         failed_repositories.sort(key=lambda failure: repo_order.get(failure.repo, len(repo_order)))
 
         commits = [commit for result in repo_results for commit in result.commits]
-        raw_commits, file_changes = build_raw_rows(org=org, run_id=run.run_id, commits=commits)
-        aggregates = aggregate_daily(org, commits)
+        filtered_commits = filter_commit_changes(commits, commit_changes_filtration_level)
+        raw_commits, file_changes = build_raw_rows(org=org, run_id=run.run_id, commits=filtered_commits)
+        aggregates = aggregate_daily(org, filtered_commits)
         repo_state_updates = _build_repo_state_updates(ref_scope=ref_scope, repo_results=repo_results)
 
         if fail_fast and failed_repositories:
@@ -447,6 +454,7 @@ def crawl_repositories(
     workers: int = 1,
     fail_fast: bool = False,
     finalize_state: bool = True,
+    commit_changes_filtration_level: CommitChangesFiltrationLevel = DEFAULT_COMMIT_CHANGES_FILTRATION_LEVEL,
 ) -> CrawlResult:
     """Crawl an explicit repository set under a caller-defined target label.
 
@@ -527,8 +535,9 @@ def crawl_repositories(
         failed_repositories.sort(key=lambda failure: repo_order.get(failure.repo, len(repo_order)))
 
         commits = [commit for result in repo_results for commit in result.commits]
-        raw_commits, file_changes = build_raw_rows(org=target, run_id=run.run_id, commits=commits)
-        aggregates = aggregate_daily(target, commits)
+        filtered_commits = filter_commit_changes(commits, commit_changes_filtration_level)
+        raw_commits, file_changes = build_raw_rows(org=target, run_id=run.run_id, commits=filtered_commits)
+        aggregates = aggregate_daily(target, filtered_commits)
         repo_state_updates = _build_repo_state_updates(ref_scope=ref_scope, repo_results=repo_results)
 
         if fail_fast and failed_repositories:

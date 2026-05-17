@@ -84,7 +84,12 @@ def test_crawl_org_reads_real_git_history_with_merges_binary_renames_deletions_a
         lambda org, token=None: [_repo_info(local_git_repo.path)],
     )
 
-    result = crawl_org("localorg", cache_dir=tmp_path / "mirrors", state_db=tmp_path / "state.sqlite")
+    result = crawl_org(
+        "localorg",
+        cache_dir=tmp_path / "mirrors",
+        state_db=tmp_path / "state.sqlite",
+        commit_changes_filtration_level="all",
+    )
 
     assert result.run.status == "success"
     assert result.run.repositories_crawled == 1

@@ -1,5 +1,7 @@
 import json
+from datetime import datetime, timezone
 
+from git_crawl.gitlog import CommitRecord, FileChange
 from git_crawl.github import RepoInfo
 from git_crawl.metrics import AggregateResult, ContributorDayMetrics, OrgDayMetrics, RepoDayMetrics
 from git_crawl.output import rows_to_dicts, write_csv, write_jsonl
@@ -81,7 +83,18 @@ def test_write_crawl_outputs_includes_org_days_and_run_scoped_repositories(tmp_p
         org="chutesai",
         run=run,
         repositories=[repo],
-        commits=[],
+        commits=[
+            CommitRecord(
+                repo="api",
+                sha="abc123",
+                author_name="Alice",
+                author_email="alice@example.com",
+                author_login=None,
+                authored_at=datetime(2026, 5, 4, 10, 0, tzinfo=timezone.utc),
+                parents=[],
+                changes=[FileChange(3, 1, "src/app.py", False)],
+            )
+        ],
         raw_commits=[
             CommitRow(
                 run_id="run-1",
@@ -163,6 +176,7 @@ def test_write_crawl_outputs_includes_org_days_and_run_scoped_repositories(tmp_p
     assert tmp_path / "excluded_repositories.csv" in written
     assert tmp_path / "summary.json" in written
     assert tmp_path / "summary.md" in written
+    assert tmp_path / "activity.json" in written
     assert tmp_path / "output_manifest.json" in written
     assert [json.loads(line) for line in (tmp_path / "org_days.jsonl").read_text().splitlines()] == [
         {
@@ -239,9 +253,23 @@ def test_write_crawl_outputs_includes_org_days_and_run_scoped_repositories(tmp_p
     assert "Calendar averages" in summary_md
     assert "Per calendar day" in summary_md
 
+    activity = json.loads((tmp_path / "activity.json").read_text(encoding="utf-8"))
+    assert activity["schema_version"] == "git-crawl-activity-v1"
+    assert activity["filter"]["mode"] == "source_like"
+    assert activity["totals"]["commits"] == 1
+    assert activity["totals"]["file_changes"] == 1
+    assert activity["totals"]["lines_added"] == 3
+    assert activity["skipped"] == {
+        "file_changes": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "by_reason": {},
+    }
+
     manifest = json.loads((tmp_path / "output_manifest.json").read_text(encoding="utf-8"))
     assert manifest["manifest_version"] == "git-crawl-output-manifest-v1"
     assert manifest["output_schema_version"] == "git-crawl-output-v1"
+    assert manifest["activity_schema_version"] == "git-crawl-activity-v1"
     assert manifest["run"] == {"run_id": "run-1", "status": "success", "target": "chutesai"}
     assert manifest["datasets"]["commits"] == {
         "schema_version": "git-crawl-commits-v1",
@@ -267,6 +295,11 @@ def test_write_crawl_outputs_includes_org_days_and_run_scoped_repositories(tmp_p
     assert manifest["datasets"]["summary"] == {
         "schema_version": "git-crawl-summary-v1",
         "json": "summary.json",
+        "fields": None,
+    }
+    assert manifest["datasets"]["activity"] == {
+        "schema_version": "git-crawl-activity-v1",
+        "json": "activity.json",
         "fields": None,
     }
 

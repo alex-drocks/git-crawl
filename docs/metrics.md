@@ -136,13 +136,51 @@ When a SQLite state database is configured and `ref_scope = "default-branch"`, G
 
 Incremental outputs are run-scoped: rows emitted in a run describe the commits processed during that run, not a full historical replacement table. Downstream consumers should use `run_id` and the raw commits/file changes tables for lineage and deduplication. If a run has `status = "partial"` or `status = "failed"`, `org_days`, `repo_days`, and `contributor_days` include only successfully crawled repositories; consumers should join `crawl_runs` and `repo_failures` before treating org-level metrics as complete.
 
+## Credited activity output
+
+When JSON output is enabled, Git Crawl writes `activity.json` using the
+`git-crawl-activity-v1` schema. This is the canonical consumer-facing activity
+contract for APIs and dashboards that need credited source-like activity without
+recomputing path filters from row files.
+
+The activity filter has `mode = "source_like"` and excludes these noisy change
+reasons:
+
+- `binary`
+- `lockfile`
+- `generated`
+- `vendored`
+- `spec/schema-like`
+
+Activity `totals` are credited activity only:
+
+- `commits`: commits with at least one credited file change.
+- `file_changes`: credited file-change rows.
+- `lines_added`: credited added text lines.
+- `lines_deleted`: credited deleted text lines.
+- `active_days`: UTC target days with credited activity.
+- `repo_days`: repository/day buckets with credited activity.
+- `contributor_days`: repository/day/contributor buckets with credited activity.
+- `distinct_contributors`: distinct contributor identities across credited commits.
+
+`averages.per_active_day` divides credited `commits`, `file_changes`,
+`lines_added`, and `lines_deleted` by `active_days`. When there are no credited
+active days, all rates are `0.0`.
+
+`skipped` reports excluded noisy file changes separately. Its top-level
+`file_changes`, `lines_added`, and `lines_deleted` fields are totals across all
+excluded changes, and `skipped.by_reason` breaks those same metrics down by
+exclusion reason. Commits that only changed skipped files are not included in
+activity `totals.commits`.
+
 ## Summary reports
 
 When JSON output is enabled, Git Crawl also writes:
 
 - `summary.json`: totals, source-like versus generated-like churn, calendar-span averages, path-class breakdowns, top repositories, top paths by additions, exclusion counts, and interpretation caveats. It includes `schema_version` and `output_schema_version` for machine compatibility checks.
 - `summary.md`: the same core facts in a human-readable report.
-- `output_manifest.json`: the versioned output contract, with `manifest_version`, `output_schema_version`, `summary_schema_version`, and a `datasets` map containing per-dataset schema versions, filenames, and ordered field lists.
+- `activity.json`: credited activity totals and skipped noisy churn using the stable `git-crawl-activity-v1` schema.
+- `output_manifest.json`: the versioned output contract, with `manifest_version`, `output_schema_version`, `summary_schema_version`, `activity_schema_version`, and a `datasets` map containing per-dataset schema versions, filenames, and ordered field lists.
 
 Calendar averages are computed from total commits, file changes, lines added, and
 lines deleted divided by the inclusive calendar span from `first_day` to

@@ -1,6 +1,8 @@
 import tomllib
 from pathlib import Path
 
+import git_crawl
+
 
 def test_project_metadata_targets_python_312_only():
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
@@ -10,6 +12,12 @@ def test_project_metadata_targets_python_312_only():
     assert "Programming Language :: Python :: 3.12" in classifiers
     assert "Programming Language :: Python :: 3.11" not in classifiers
     assert pyproject["tool"]["ruff"]["target-version"] == "py312"
+
+
+def test_package_version_is_loaded_from_project_metadata():
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert git_crawl.__version__ == pyproject["project"]["version"]
 
 
 def test_source_distribution_manifest_includes_hardening_docs_and_scripts():

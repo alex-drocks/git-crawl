@@ -107,6 +107,7 @@ repo_failures.jsonl
 repo_failures.csv
 summary.json
 summary.md
+activity.json
 output_manifest.json
 ```
 
@@ -114,6 +115,7 @@ Reports and schema contract:
 
 - `summary.json`: machine-readable run summary, totals, calendar-span averages, path-class breakdowns, top repos, and top paths by lines added. It includes `schema_version` and `output_schema_version` for downstream compatibility checks.
 - `summary.md`: human-readable summary with calendar averages and interpretation caveats.
+- `activity.json`: canonical consumer-facing credited activity totals. It uses the `git-crawl-activity-v1` schema, reports source-like activity with generic `file_changes`, `lines_added`, and `lines_deleted` names, and keeps lockfile/generated/vendor/spec/binary churn under `skipped`.
 - `output_manifest.json`: versioned output contract listing every dataset, its schema version, emitted filename(s), and ordered fields. Downstream packages should check this file before loading crawl outputs.
 
 Daily aggregate rows:
@@ -225,5 +227,6 @@ Prefer tags for repeatability once a tag exists. Raw branch references such as `
 - Binary file changes are counted as changed files but contribute `0` added and deleted text lines, matching Git's `--numstat` semantics.
 - Commit authors are aggregated by contributor identity: GitHub noreply login when available, otherwise lower-cased author email, otherwise author name. For modern GitHub noreply addresses, `author_login` uses the login after `+`; for older noreply addresses, it uses the local part.
 - `file_changes` rows classify paths into broad interpretation buckets such as `source`, `lockfile`, `generated`, `spec`, `docs`, `binary`, `vendored`, and `unknown`. The raw additions/deletions remain unchanged; use the classification and `summary.*` generated-like totals to avoid treating tokenizers, OpenAPI specs, lockfiles, or vendored artifacts as hand-authored source churn.
+- `activity.json` is the preferred downstream contract when a consumer needs credited code activity. It excludes binary, lockfile, generated, vendored, and spec/schema-like file changes, drops commits with no credited file changes from activity totals, and reports excluded churn separately in `skipped`.
 - Aggregate dates use UTC dates derived from Git author timestamps.
 - Current lines-of-code snapshots are intentionally not included yet; this tool currently measures commit history/churn, not checked-out source size.

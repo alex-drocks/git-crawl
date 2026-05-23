@@ -113,6 +113,11 @@ def _contributor_identity(commit: CommitRecord) -> str:
     return f"name:{commit.author_name.strip()}"
 
 
+def contributor_identity_key(commit: CommitRecord) -> str:
+    """Return the normalized contributor key used by aggregate metrics."""
+    return _contributor_identity(commit)
+
+
 def aggregate_daily(org: str, commits: Iterable[CommitRecord]) -> AggregateResult:
     """Aggregate parsed commit records into daily org, repo, and contributor rows."""
     repo_acc: dict[tuple[str, str], dict[str, object]] = {}

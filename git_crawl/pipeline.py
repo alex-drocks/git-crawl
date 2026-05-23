@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+from .activity import ACTIVITY_SCHEMA_VERSION, build_activity
 from .git_backend import commit_exists, ensure_mirror, get_ref_sha, read_commit_log
 from .github import RepoInfo, RepositoryExclusion, list_org_repositories, list_owner_repositories, partition_repositories
 from .gitlog import CommitRecord, parse_git_log
@@ -1183,11 +1184,17 @@ def build_output_manifest(
             "json": "summary.json",
             "fields": None,
         }
+        datasets["activity"] = {
+            "schema_version": ACTIVITY_SCHEMA_VERSION,
+            "json": "activity.json",
+            "fields": None,
+        }
 
     return {
         "manifest_version": OUTPUT_MANIFEST_VERSION,
         "output_schema_version": OUTPUT_SCHEMA_VERSION,
         "summary_schema_version": SUMMARY_SCHEMA_VERSION,
+        "activity_schema_version": ACTIVITY_SCHEMA_VERSION,
         "run": {
             "run_id": result.run.run_id,
             "status": result.run.status,
@@ -1228,6 +1235,7 @@ def write_crawl_outputs(
         failures_jsonl = output_dir / "repo_failures.jsonl"
         summary_json = output_dir / "summary.json"
         summary_md = output_dir / "summary.md"
+        activity_json = output_dir / "activity.json"
         write_jsonl(crawl_run_jsonl, [result.run])
         write_jsonl(org_jsonl, org_day_rows)
         write_jsonl(repo_jsonl, repo_day_rows)
@@ -1243,6 +1251,19 @@ def write_crawl_outputs(
             encoding="utf-8",
         )
         summary_md.write_text(_render_summary_markdown(summary), encoding="utf-8")
+        activity = build_activity(
+            org=result.org,
+            run_id=result.run.run_id,
+            status=result.run.status,
+            ref_scope=result.run.ref_scope,
+            history_since=result.run.history_since,
+            history_until=result.run.history_until,
+            commits=result.commits,
+        )
+        activity_json.write_text(
+            json.dumps(activity, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         written.extend(
             [
                 crawl_run_jsonl,
@@ -1256,6 +1277,7 @@ def write_crawl_outputs(
                 failures_jsonl,
                 summary_json,
                 summary_md,
+                activity_json,
             ]
         )
 

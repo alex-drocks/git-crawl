@@ -6,6 +6,16 @@ The project follows semantic versioning once tagged releases begin.
 
 ## Unreleased
 
+No changes yet.
+
+## 0.3.0
+
+### Added
+
+- Add canonical `activity.json` credited activity output with source-like totals, active-day averages, and skipped noisy churn by reason.
+
+## 0.2.0
+
 ### Added
 
 - Harden CI with committed-whitespace checks, Ruff linting, package compilation, and the existing pytest suite.

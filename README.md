@@ -62,8 +62,8 @@ Use `crawl-repos` when another system has already resolved the repositories to i
 {
   "target": "bittensor-subnets",
   "repositories": [
-    "https://github.com/chutesai/api",
-    {"url": "https://github.com/chutesai/worker/tree/main"}
+    "https://github.com/chutesai/chutes",
+    {"url": "https://github.com/chutesai/chutes-api/tree/main"}
   ]
 }
 ```

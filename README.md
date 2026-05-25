@@ -2,12 +2,12 @@
 
 `git-crawl` is a dependency-light Python library and CLI for crawling public GitHub repositories, keeping local bare Git mirrors, extracting exact `git log --numstat` history, and writing structured raw rows plus daily contribution metrics.
 
-It is designed to be **zero-hosting by default**:
+Runtime model:
 
-- no required hosted API;
-- no central scheduled crawler that Alex has to operate;
-- users bring their own GitHub token, storage, cache, schedule, and deployment;
-- outputs are local JSONL/CSV/JSON/Markdown files that any downstream consumer can load.
+- `git-crawl` runs as a local CLI or library; it does not include a server process, scheduler, dashboard, hosted API, or static-site publisher.
+- Repository discovery and metadata use the GitHub API. A GitHub token is optional for public repositories and recommended for higher API rate limits.
+- Bare Git mirrors, optional SQLite crawl state, and output files are stored in caller-selected local paths.
+- Scheduling, retention, hosting, and publication are handled by the caller or downstream system.
 
 ## Why clone/fetch repos instead of only using the GitHub API?
 
@@ -17,16 +17,16 @@ The GitHub API is still used for public repository discovery and metadata.
 
 ## Crawl modes
 
-- `crawl-org`: discover and crawl selected repositories from one GitHub organization, preserving legacy short repo names in raw rows and state.
+- `crawl-org`: discover and crawl selected repositories from one GitHub organization. Output rows and state use short repository names within that organization.
 - `crawl-owner`: discover and crawl selected repositories from a GitHub owner root. It tries organization discovery first, falls back to user discovery when the org does not exist, and uses full `owner/repo` repository identity in raw rows and state. Pass `--target` when the owner is only the discovery source and output rows/state should belong to another target, such as `bittensor-subnet-64`.
-- `crawl-repos`: crawl an explicit manifest of GitHub repository URLs. This is the preferred integration point for adapters such as a future `tao-git-crawl`, because exact repo links stay exact and are not expanded into unrelated owner-wide crawls.
+- `crawl-repos`: crawl an explicit manifest of GitHub repository URLs. Exact repo links stay exact and are not expanded into unrelated owner-wide crawls.
 
 ## Quick start
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install -e '.[dev]'
+python -m pip install -e .
 
 # Optional but recommended to raise GitHub API rate limits.
 export GITHUB_TOKEN='***'
@@ -150,7 +150,7 @@ Defaults:
 
 ## Downstream consumption boundary
 
-`git-crawl` stops at structured data generation. It does not ship a dashboard, hosted API, scheduled crawler, or static-site publisher. Product-specific views, KPI pages, public dashboards, and deployment workflows should live in downstream consumers such as `tao-git-crawl`, private applications, notebooks, BI tools, or a separate reporting package.
+`git-crawl` stops at structured data generation. It does not ship a dashboard, hosted API, scheduled crawler, or static-site publisher. Product-specific views, KPI pages, public dashboards, and deployment workflows belong in downstream consumers such as private applications, notebooks, BI tools, or reporting packages.
 
 ## Config file
 
@@ -193,35 +193,6 @@ The CLI advances repository state after structured output files are written succ
 
 Output rows are run-scoped and include `run_id`, so downstream consumers can load new runs incrementally and deduplicate by commit SHA if needed. Repository metadata rows also include `run_id` and `org`/target label, which keeps appended multi-target loads traceable without relying on the output directory name. When a run is `partial` or `failed`, aggregate rows include only successfully crawled repositories; join `crawl_runs` and `repo_failures` before treating aggregates as complete.
 
-## Development
-
-```bash
-python -m pip install -e '.[dev]'
-python -m ruff check git_crawl tests
-python -m compileall -q git_crawl
-python -m pytest tests -q
-```
-
-CI runs the same lint, compile, and test gates on every branch push and pull request. It also builds source/wheel distributions and smoke-installs the wheel in a clean consumer virtualenv.
-
-Before publishing or wiring a downstream package to a new commit, run the release-oriented gates locally:
-
-```bash
-python -m pip install build
-python -m build
-python scripts/smoke_consumer_install.py dist/*.whl
-```
-
-A downstream package can use `git-crawl` before it is on PyPI by pinning a GitHub tag or commit with a PEP 508 direct reference:
-
-```toml
-dependencies = [
-  "git-crawl @ git+https://github.com/alex-drocks/git-crawl.git@<commit-sha-or-tag>"
-]
-```
-
-Prefer tags for repeatability once a tag exists. Raw branch references such as `@main` are convenient but are not reproducible enough for serious downstream testing.
-
 ## Data accuracy notes
 
 - Binary file changes are counted as changed files but contribute `0` added and deleted text lines, matching Git's `--numstat` semantics.
@@ -229,4 +200,4 @@ Prefer tags for repeatability once a tag exists. Raw branch references such as `
 - `file_changes` rows classify paths into broad interpretation buckets such as `source`, `lockfile`, `generated`, `spec`, `docs`, `binary`, `vendored`, and `unknown`. The raw additions/deletions remain unchanged; use the classification and `summary.*` generated-like totals to avoid treating tokenizers, OpenAPI specs, lockfiles, or vendored artifacts as hand-authored source churn.
 - `activity.json` is the preferred downstream contract when a consumer needs credited code activity. It excludes binary, lockfile, generated, vendored, and spec/schema-like file changes, drops commits with no credited file changes from activity totals, and reports excluded churn separately in `skipped`.
 - Aggregate dates use UTC dates derived from Git author timestamps.
-- Current lines-of-code snapshots are intentionally not included yet; this tool currently measures commit history/churn, not checked-out source size.
+- The tool measures commit history/churn, not checked-out source size. It does not emit current lines-of-code snapshots.

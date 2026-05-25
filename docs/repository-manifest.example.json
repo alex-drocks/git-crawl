@@ -1,7 +1,7 @@
 {
   "target": "bittensor-subnets",
   "repositories": [
-    "https://github.com/chutesai/api",
-    {"url": "https://github.com/chutesai/worker/tree/main"}
+    "https://github.com/chutesai/chutes",
+    {"url": "https://github.com/chutesai/chutes-api/tree/main"}
   ]
 }

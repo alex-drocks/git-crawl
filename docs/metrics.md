@@ -80,7 +80,7 @@ This table lets downstream consumers reconcile GitHub's discovered repository co
 
 ## Target-day aggregates
 
-The file is still named `org_days` for schema compatibility. One `org_days` row represents the whole crawl target on one UTC date, across all selected repositories included in the run. For `crawl-org`, the target is an organization; for `crawl-owner`, it is the owner login; for `crawl-repos`, it is the manifest or CLI target label.
+`org_days` is the target-day aggregate dataset in the output schema. One `org_days` row represents the whole crawl target on one UTC date, across all selected repositories included in the run. For `crawl-org`, the target is an organization; for `crawl-owner`, it is the owner login; for `crawl-repos`, it is the manifest or CLI target label.
 
 Fields:
 
@@ -132,7 +132,7 @@ Fields:
 
 ## Incremental crawling
 
-When a SQLite state database is configured and `ref_scope = "default-branch"`, Git Crawl stores the last successfully crawled default branch SHA per repository and history window. On the next successful run with the same default branch, `--since`, and `--until` values, it reads the Git range `previous_sha..current_sha` instead of the full default branch history. If the branch or history window changes, or if the previous SHA is missing from the mirror after a cache rebuild or force-push, the crawler falls back to a full read of the current default branch scope. State databases created before history-window tracking are treated as unknown provenance and get one full read before new incremental state is trusted. In CLI runs, repository state is advanced only after output files are written successfully; output failures mark the run failed without updating repository SHAs.
+When a SQLite state database is configured and `ref_scope = "default-branch"`, Git Crawl stores the last successfully crawled default branch SHA per repository and history window. On the next successful run with the same default branch, `--since`, and `--until` values, it reads the Git range `previous_sha..current_sha` instead of the full default branch history. If the branch or history window changes, if stored state has unknown history-window provenance, or if the previous SHA is missing from the mirror after a cache rebuild or force-push, the crawler falls back to a full read of the current default branch scope. In CLI runs, repository state is advanced only after output files are written successfully; output failures mark the run failed without updating repository SHAs.
 
 Incremental outputs are run-scoped: rows emitted in a run describe the commits processed during that run, not a full historical replacement table. Downstream consumers should use `run_id` and the raw commits/file changes tables for lineage and deduplication. If a run has `status = "partial"` or `status = "failed"`, `org_days`, `repo_days`, and `contributor_days` include only successfully crawled repositories; consumers should join `crawl_runs` and `repo_failures` before treating org-level metrics as complete.
 
@@ -194,4 +194,4 @@ These are calendar-span averages, not active-period averages; inactive days,
 weeks, and months inside the first/last activity range are included in the
 denominator.
 
-The summary is intentionally derived from the structured row files, so downstream jobs can recompute it if they need custom path filters or different top-N logic.
+The summary is derived from the structured row files, so downstream jobs can recompute it with custom path filters or different top-N logic.

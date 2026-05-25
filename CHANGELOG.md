@@ -1,36 +1,24 @@
 # Changelog
 
-All notable changes to Git Crawl will be documented in this file.
-
-The project follows semantic versioning once tagged releases begin.
-
-## Unreleased
-
-No changes yet.
+This file records user-visible changes and compatibility notes for Git Crawl.
 
 ## 0.3.0
 
-### Added
-
-- Add canonical `activity.json` credited activity output with source-like totals, active-day averages, and skipped noisy churn by reason.
+- Added `activity.json` as the canonical consumer-facing activity contract using the `git-crawl-activity-v1` schema.
+- Credited activity totals exclude binary, lockfile, generated, vendored, and spec/schema-like file changes.
+- Skipped noisy churn is reported separately by exclusion reason.
 
 ## 0.2.0
 
-### Added
+- Added package metadata, repository links, classifiers, and search keywords.
+- Added bounded jittered exponential backoff for transient GitHub API discovery and git mirror clone/fetch failures.
+- GitHub `Retry-After` and `X-RateLimit-Reset` headers are honored before exponential API retry delays.
+- Added MIT license terms.
 
-- Harden CI with committed-whitespace checks, Ruff linting, package compilation, and the existing pytest suite.
-- Add explicit Ruff configuration for the Python 3.12 codebase.
-- Add MIT license text.
-- Add package metadata for repository links, classifiers, and search keywords.
-- Add bounded jittered exponential backoff for transient GitHub API discovery and git mirror clone/fetch failures.
-- Use GitHub `Retry-After` and `X-RateLimit-Reset` headers before falling back to exponential API retry delays.
+## 0.1.0
 
-## 0.1.0 - Initial development
-
-### Added
-
-- Public GitHub organization repository discovery.
-- Bare git mirror caching and default-branch history extraction via `git log --numstat`.
-- JSONL and CSV outputs for crawl runs, repositories, excluded repositories, commits, file changes, repo failures, org days, repo days, and contributor days.
-- SQLite incremental state for default-branch crawls.
-- Multi-repo organization-day productivity aggregates and deterministic output ordering.
+- Added public GitHub organization repository discovery.
+- Added bare git mirror caching and default-branch history extraction via `git log --numstat`.
+- Added JSONL and CSV output datasets for crawl runs, repositories, excluded repositories, commits, file changes, repo failures, org days, repo days, and contributor days.
+- Added SQLite incremental state for default-branch crawls.
+- Added multi-repository target-day aggregates and deterministic output ordering.

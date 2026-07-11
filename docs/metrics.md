@@ -43,7 +43,8 @@ Fields:
 - `org`: crawl target label. For `crawl-org`, this is the GitHub organization login; for `crawl-owner`, this is the owner login or CLI `--target` value; for `crawl-repos`, this is the manifest `target` or CLI `--target` value.
 - `repo`: repository identity. For `crawl-org`, this is the short repository name within the org; for `crawl-owner` and `crawl-repos`, this is the full `owner/repo` name to avoid cross-owner collisions.
 - `sha`: commit SHA.
-- `path`: changed path as emitted by Git numstat.
+- `path`: literal changed path from Git numstat; tabs and newlines are preserved, and rename/copy rows use the
+  destination path so classification reflects the resulting file.
 - `additions`: text lines added. Binary file changes use `0` because Git emits `-` for numstat counts.
 - `deletions`: text lines deleted. Binary file changes use `0` because Git emits `-` for numstat counts.
 - `is_binary`: true when Git emitted binary numstat markers.

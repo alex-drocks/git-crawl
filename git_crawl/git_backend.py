@@ -199,6 +199,7 @@ def read_commit_log(
         str(mirror),
         "log",
         "--numstat",
+        "-z",
         "--date=iso-strict",
         f"--format=format:{GIT_LOG_FORMAT}",
     ]

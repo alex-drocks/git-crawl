@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from socket import timeout as SocketTimeout
 from typing import Callable, Iterable
 
+from .redaction import redact_url_credentials
 from .retry import RetryPolicy, sleep_before_retry
 
 GITHUB_API_URL = "https://api.github.com"
@@ -108,7 +109,11 @@ def parse_github_repo_url(raw_url: str) -> GitHubRepoRef:
         _reject_non_repository_subpath(path, display_url)
         owner, repo = _owner_repo_from_path(path)
     else:
-        parsed = urllib.parse.urlparse(raw_url)
+        try:
+            parsed = urllib.parse.urlparse(raw_url)
+            _ = parsed.port  # Validate malformed and out-of-range ports.
+        except ValueError as error:
+            raise GitHubURLParseError(f"Not a valid GitHub repository URL: {display_url!r}") from error
         host = (parsed.hostname or "").lower()
         if host != "github.com":
             raise GitHubURLParseError(f"Not a GitHub repository URL: {display_url!r}")
@@ -123,12 +128,19 @@ def parse_github_repo_url(raw_url: str) -> GitHubRepoRef:
 
 
 def _safe_url_for_error(raw_url: str) -> str:
-    parsed = urllib.parse.urlparse(raw_url)
+    try:
+        parsed = urllib.parse.urlparse(raw_url)
+    except ValueError:
+        return redact_url_credentials(raw_url)
     if not parsed.scheme or not parsed.netloc:
         return raw_url
     netloc = parsed.hostname or ""
-    if parsed.port:
-        netloc = f"{netloc}:{parsed.port}"
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port:
+        netloc = f"{netloc}:{port}"
     return urllib.parse.urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
 
 
@@ -140,7 +152,7 @@ def _owner_repo_from_path(path: str) -> tuple[str | None, str | None]:
 
 
 def _reject_non_repository_subpath(path: str, display_url: str) -> None:
-    parts = [part for part in path.strip("/").split("/") if part]
+    parts = [urllib.parse.unquote(part) for part in path.strip("/").split("/") if part]
     if len(parts) <= 2:
         return
     allowed_context_prefixes = {"tree", "blob", "commit", "releases"}

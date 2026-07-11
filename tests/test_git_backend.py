@@ -20,6 +20,7 @@ def test_read_commit_log_targets_requested_default_branch_ref(monkeypatch):
 
     args = calls[0]
     assert "--all" not in args
+    assert "-z" in args
     assert "refs/heads/main" in args
     assert "--numstat" in args
 

@@ -109,8 +109,9 @@ def test_crawl_org_reads_real_git_history_with_merges_binary_renames_deletions_a
     assert binary_change.deletions == 0
 
     rename_change = next(row for row in result.file_changes if row.sha == rename_sha)
-    assert rename_change.path == "src/{app.py => main.py}"
+    assert rename_change.path == "src/main.py"
     assert rename_change.is_binary is False
+    assert rename_change.path_class == "source"
 
     delete_change = next(row for row in result.file_changes if row.sha == delete_sha)
     assert delete_change.path == "src/main.py"
@@ -121,6 +122,34 @@ def test_crawl_org_reads_real_git_history_with_merges_binary_renames_deletions_a
     assert commits_by_sha[empty_sha].lines_added == 0
     assert commits_by_sha[empty_sha].lines_deleted == 0
     assert [row for row in result.file_changes if row.sha == empty_sha] == []
+
+
+def test_crawl_org_preserves_literal_paths_and_classifies_rename_destination(monkeypatch, tmp_path, local_git_repo):
+    local_git_repo.write_text("src/tab\tname.py", "tabbed path\n")
+    local_git_repo.write_text("src/line\nname.py", "multiline path\n")
+    local_git_repo.write_text("old/package-lock.json", "{}\n")
+    local_git_repo.commit("add unusual paths")
+
+    local_git_repo.rename("old/package-lock.json", "web/package-lock.json")
+    rename_sha = local_git_repo.commit("move lockfile")
+
+    monkeypatch.setattr(
+        "git_crawl.pipeline.list_org_repositories",
+        lambda org, token=None: [_repo_info(local_git_repo.path)],
+    )
+
+    result = crawl_org(
+        "localorg",
+        cache_dir=tmp_path / "mirrors",
+        commit_changes_filtration_level="all",
+    )
+
+    paths = {row.path for row in result.file_changes}
+    assert "src/tab\tname.py" in paths
+    assert "src/line\nname.py" in paths
+    rename_change = next(row for row in result.file_changes if row.sha == rename_sha)
+    assert rename_change.path == "web/package-lock.json"
+    assert rename_change.path_class == "lockfile"
 
 
 def test_crawl_org_uses_real_mirror_for_incremental_two_run_and_default_branch_changes(

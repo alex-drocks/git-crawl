@@ -2,6 +2,15 @@
 
 This file records user-visible changes and compatibility notes for Git Crawl.
 
+## Unreleased
+
+## 0.3.2
+
+- Preserve literal Git paths containing tabs or newlines and expose rename destinations as the changed path, keeping
+  downstream path classification accurate.
+- Reject malformed GitHub URLs consistently and reject unsupported repository subpaths even when their route names are
+  percent-encoded.
+
 ## 0.3.0
 
 - Added `activity.json` as the canonical consumer-facing activity contract using the `git-crawl-activity-v1` schema.

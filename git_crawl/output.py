@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import csv
 import json
-from collections.abc import Mapping
+import os
+import uuid
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -20,13 +23,26 @@ def rows_to_dicts(rows: Iterable[object]) -> list[dict[str, object]]:
     return result
 
 
-def write_jsonl(path: str | Path, rows: Iterable[object]) -> None:
+@contextmanager
+def atomic_write_path(path: str | Path) -> Iterator[Path]:
+    """Yield a temporary sibling path that replaces ``path`` only if the block succeeds.
+
+    Readers see the previous file until the finished file is renamed into place, so
+    they never observe a truncated or partially written output.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        for row in rows_to_dicts(rows):
-            handle.write(json.dumps(row, sort_keys=True, separators=(",", ":")))
-            handle.write("\n")
+    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}-{uuid.uuid4().hex}")
+    try:
+        yield temporary
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def write_jsonl(path: str | Path, rows: Iterable[object]) -> None:
+    with atomic_write_path(path) as temporary:
+        _write_jsonl_file(temporary, rows)
 
 
 def write_csv(
@@ -34,8 +50,18 @@ def write_csv(
     rows: Iterable[object],
     fieldnames: Sequence[str] | None = None,
 ) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    with atomic_write_path(path) as temporary:
+        _write_csv_file(temporary, rows, fieldnames)
+
+
+def _write_jsonl_file(path: Path, rows: Iterable[object]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows_to_dicts(rows):
+            handle.write(json.dumps(row, sort_keys=True, separators=(",", ":")))
+            handle.write("\n")
+
+
+def _write_csv_file(path: Path, rows: Iterable[object], fieldnames: Sequence[str] | None) -> None:
     row_dicts = [_escape_spreadsheet_formulas(row) for row in rows_to_dicts(rows)]
     if fieldnames is None:
         fieldnames = list(row_dicts[0].keys()) if row_dicts else []

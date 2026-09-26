@@ -14,7 +14,7 @@ from socket import timeout as SocketTimeout
 from typing import Callable, Iterable
 
 from .redaction import redact_url_credentials
-from .retry import RetryPolicy, sleep_before_retry
+from .retry import DEFAULT_NETWORK_MAX_ATTEMPTS, DEFAULT_NETWORK_RETRY_DELAY, RetryPolicy, sleep_before_retry
 
 GITHUB_API_URL = "https://api.github.com"
 RETRYABLE_HTTP_STATUSES = {429, 500, 502, 503, 504}
@@ -176,8 +176,8 @@ def get_repository(
     token: str | None = None,
     api_url: str = GITHUB_API_URL,
     urlopen: Callable[..., object] | None = None,
-    max_attempts: int = 3,
-    retry_delay: float = 1.0,
+    max_attempts: int = DEFAULT_NETWORK_MAX_ATTEMPTS,
+    retry_delay: float = DEFAULT_NETWORK_RETRY_DELAY,
     retry_max_delay: float = 60.0,
     retry_jitter: float = 0.25,
 ) -> RepoInfo:
@@ -372,8 +372,8 @@ def list_org_repositories(
     per_page: int = 100,
     repo_type: str = "public",
     urlopen: Callable[..., object] | None = None,
-    max_attempts: int = 3,
-    retry_delay: float = 1.0,
+    max_attempts: int = DEFAULT_NETWORK_MAX_ATTEMPTS,
+    retry_delay: float = DEFAULT_NETWORK_RETRY_DELAY,
     retry_max_delay: float = 60.0,
     retry_jitter: float = 0.25,
 ) -> list[RepoInfo]:
@@ -403,8 +403,8 @@ def list_user_repositories(
     per_page: int = 100,
     repo_type: str = "owner",
     urlopen: Callable[..., object] | None = None,
-    max_attempts: int = 3,
-    retry_delay: float = 1.0,
+    max_attempts: int = DEFAULT_NETWORK_MAX_ATTEMPTS,
+    retry_delay: float = DEFAULT_NETWORK_RETRY_DELAY,
     retry_max_delay: float = 60.0,
     retry_jitter: float = 0.25,
 ) -> list[RepoInfo]:
@@ -434,8 +434,8 @@ def list_owner_repositories(
     api_url: str = GITHUB_API_URL,
     per_page: int = 100,
     urlopen: Callable[..., object] | None = None,
-    max_attempts: int = 3,
-    retry_delay: float = 1.0,
+    max_attempts: int = DEFAULT_NETWORK_MAX_ATTEMPTS,
+    retry_delay: float = DEFAULT_NETWORK_RETRY_DELAY,
     retry_max_delay: float = 60.0,
     retry_jitter: float = 0.25,
 ) -> list[RepoInfo]:

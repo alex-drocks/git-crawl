@@ -4,6 +4,21 @@ This file records user-visible changes and compatibility notes for Git Crawl.
 
 ## Unreleased
 
+## 0.3.3
+
+- Decode Git output as UTF-8 with replacement characters, so a path or author identity that is not valid UTF-8
+  anywhere in a repository's history no longer fails the whole repository crawl. Literal carriage returns are kept.
+- Cache only branches and tags in local mirrors. New mirrors use `git clone --bare` instead of `git clone --mirror`,
+  and mirrors created by earlier versions drop their extra refs on the next fetch. GitHub pull request refs
+  (`refs/pull/*`) are no longer downloaded, and `--ref-scope all-refs` no longer counts unmerged pull request
+  commits. Existing cache directories keep working without a rebuild.
+- Retry GitHub API requests and git clone/fetch five times by default, backing off from 2 seconds, so a short
+  outage no longer fails a repository after three attempts within about 3 seconds. Explicit retry arguments are
+  unchanged.
+- Write output files to temporary siblings and rename them into place together once all are written. Readers no
+  longer see truncated files mid-write, and a failed write leaves the previous outputs intact.
+- Pin the Ruff rule selection so newer Ruff releases that enable more rules by default do not fail CI.
+
 ## 0.3.2
 
 - Preserve literal Git paths containing tabs or newlines and expose rename destinations as the changed path, keeping

@@ -379,3 +379,35 @@ def test_list_owner_repositories_rejects_unknown_owner_type():
 def test_list_org_repositories_rejects_per_page_values_github_would_truncate():
     with pytest.raises(ValueError, match="per_page"):
         list_org_repositories("chutesai", per_page=101)
+
+
+def test_github_requests_default_to_five_attempts_with_two_second_backoff(monkeypatch):
+    calls = []
+    retry_policies = []
+
+    def fake_sleep(policy, failed_attempt, *, override_delay=None, apply_jitter=True):
+        retry_policies.append(policy)
+
+    def fake_urlopen(request, timeout):
+        calls.append(request)
+        if len(calls) < 5:
+            raise urllib.error.HTTPError(request.full_url, 502, "Bad Gateway", hdrs={}, fp=None)
+        return FakeResponse(
+            json.dumps(
+                {
+                    "name": "api",
+                    "full_name": "chutesai/api",
+                    "clone_url": "https://github.com/chutesai/api.git",
+                    "ssh_url": "git@github.com:chutesai/api.git",
+                    "default_branch": "main",
+                }
+            ).encode("utf-8")
+        )
+
+    monkeypatch.setattr(github, "sleep_before_retry", fake_sleep)
+
+    repo = github.get_repository("chutesai", "api", urlopen=fake_urlopen)
+
+    assert repo.full_name == "chutesai/api"
+    assert len(calls) == 5
+    assert {(policy.max_attempts, policy.initial_delay) for policy in retry_policies} == {(5, 2.0)}

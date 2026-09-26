@@ -5,6 +5,11 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+# Network operations (GitHub API requests and git clone/fetch) default to five
+# attempts backing off 2s, 4s, 8s, 16s, so a ~30s outage does not fail a crawl.
+DEFAULT_NETWORK_MAX_ATTEMPTS = 5
+DEFAULT_NETWORK_RETRY_DELAY = 2.0
+
 
 @dataclass(frozen=True)
 class RetryPolicy:

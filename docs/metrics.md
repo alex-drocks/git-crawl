@@ -8,7 +8,7 @@ Git Crawl emits raw rows plus derived daily aggregates. Metric definitions are i
 - By default, private repositories are excluded from tracking. The API request defaults to `type=public`, and any private repositories returned by an authenticated request are filtered out before crawling.
 - Archived repositories are excluded unless `include_archived` is enabled.
 - Fork repositories are excluded unless `include_forks` is enabled.
-- The default ref scope is the repository default branch. Use `ref_scope = "all-refs"` only when you intentionally want branches/tags beyond the active default branch.
+- The default ref scope is the repository default branch. Use `ref_scope = "all-refs"` only when you intentionally want branches/tags beyond the active default branch. Pull request refs (`refs/pull/*`) are not part of either scope.
 - Dates in aggregate tables are UTC dates derived from Git author timestamps.
 - Parallel repository crawls are normalized back to selected repository order before raw rows are written, so output row ordering is deterministic for the same selected repositories and Git history.
 

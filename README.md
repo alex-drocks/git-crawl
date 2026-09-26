@@ -144,9 +144,11 @@ Defaults:
 - Crawls all selected public repositories in the organization; by default that means public non-archived non-fork repos, with an optional `--active-since` cutoff. There is no implicit “main repo only” shortcut. Use `--max-repos` only for smoke tests or intentionally capped samples.
 - Excludes archived repos and forks. Add `--include-archived` or `--include-forks` when you intentionally want them. If a config file enables them, `--no-include-archived` or `--no-include-forks` turns them off for one run. Excluded repos are written to `excluded_repositories` with an `exclusion_reason`.
 - Crawls only each repository's default branch. Add `--ref-scope all-refs` when you intentionally want all branches/tags.
+  Local mirrors cache branches and tags only; GitHub pull request refs (`refs/pull/*`) are never fetched or crawled.
 - `--active-since` accepts an ISO timestamp or date; date-only values are interpreted as midnight UTC.
 - Continues past individual repository failures and records them in `repo_failures`. Add `--fail-fast` to stop after the first repository failure and return a failed run with the failure row preserved. Fail-fast crawls run sequentially even if `--workers` is greater than 1, so no already-started background repositories are silently ignored.
-- Retries transient GitHub API discovery failures and git mirror clone/fetch failures with bounded jittered exponential backoff. GitHub `Retry-After` and `X-RateLimit-Reset` headers are used before falling back to exponential API retry delays.
+- Retries transient GitHub API discovery failures and git mirror clone/fetch failures with bounded jittered exponential backoff: five attempts by default, waiting about 2s, 4s, 8s, and 16s between them. GitHub `Retry-After` and `X-RateLimit-Reset` headers are used before falling back to exponential API retry delays.
+- Writes each output file to a temporary sibling and renames the whole set into place once every file is complete, so readers never see a partially written output and a failed write keeps the previous files.
 
 ## Downstream consumption boundary
 

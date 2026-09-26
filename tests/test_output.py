@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from git_crawl.gitlog import CommitRecord, FileChange
 from git_crawl.github import RepoInfo
 from git_crawl.metrics import AggregateResult, ContributorDayMetrics, OrgDayMetrics, RepoDayMetrics
@@ -475,3 +477,67 @@ def test_write_crawl_outputs_redacts_credentials_from_repository_urls(tmp_path):
     assert "sensitive-userinfo" not in repository["ssh_url"]
     assert repository["clone_url"] == "https://[REDACTED]@github.com/chutesai/api.git"
     assert repository["ssh_url"] == "ssh://[REDACTED]@github.com/chutesai/api.git"
+
+
+def test_write_jsonl_keeps_previous_file_when_writing_fails(tmp_path):
+    path = tmp_path / "rows.jsonl"
+    write_jsonl(path, [{"id": 1}])
+
+    with pytest.raises(TypeError):
+        write_jsonl(path, [{"id": 2}, {"id": object()}])
+
+    assert path.read_text(encoding="utf-8") == '{"id":1}\n'
+    assert [child.name for child in tmp_path.iterdir()] == ["rows.jsonl"]
+
+
+def _empty_crawl_result(run_id: str) -> CrawlResult:
+    run = CrawlRunRecord(
+        run_id=run_id,
+        org="chutesai",
+        started_at="2026-05-04T00:00:00+00:00",
+        finished_at="2026-05-04T00:01:00+00:00",
+        status="success",
+        ref_scope="default-branch",
+        history_since=None,
+        history_until=None,
+        active_since=None,
+        repositories_discovered=0,
+        repositories_selected=0,
+        repositories_crawled=0,
+        repositories_failed=0,
+        commits_parsed=0,
+        error_message=None,
+    )
+    return CrawlResult(
+        org="chutesai",
+        run=run,
+        repositories=[],
+        commits=[],
+        raw_commits=[],
+        file_changes=[],
+        failed_repositories=[],
+        repo_state_updates=[],
+        aggregates=AggregateResult(repo_days=[], contributor_days=[], org_days=[]),
+    )
+
+
+def test_write_crawl_outputs_replaces_files_only_after_every_file_is_written(monkeypatch, tmp_path):
+    write_crawl_outputs(_empty_crawl_result("run-1"), tmp_path)
+    previous_outputs = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+
+    def fail_activity(**kwargs):
+        raise RuntimeError("activity build failed")
+
+    monkeypatch.setattr("git_crawl.pipeline.build_activity", fail_activity)
+    with pytest.raises(RuntimeError, match="activity build failed"):
+        write_crawl_outputs(_empty_crawl_result("run-2"), tmp_path)
+
+    # Files staged before the failure were not swapped in, and no temporary files remain.
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == previous_outputs
+
+    monkeypatch.undo()
+    written = write_crawl_outputs(_empty_crawl_result("run-2"), tmp_path)
+
+    assert sorted(path.name for path in tmp_path.iterdir()) == sorted(path.name for path in written)
+    assert json.loads((tmp_path / "crawl_runs.jsonl").read_text(encoding="utf-8"))["run_id"] == "run-2"
+    assert json.loads((tmp_path / "output_manifest.json").read_text(encoding="utf-8"))["run"]["run_id"] == "run-2"

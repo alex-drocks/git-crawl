@@ -4,6 +4,7 @@ import json
 import uuid
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -13,7 +14,7 @@ from .git_backend import commit_exists, ensure_mirror, get_ref_sha, read_commit_
 from .github import RepoInfo, RepositoryExclusion, list_org_repositories, list_owner_repositories, partition_repositories
 from .gitlog import CommitRecord, parse_git_log
 from .metrics import AggregateResult, CommitChangesFiltrationLevel, aggregate_daily, filter_commit_changes
-from .output import write_csv, write_jsonl
+from .output import _write_csv_file, _write_jsonl_file, atomic_write_path
 from .raw import CommitRow, FileChangeRow, build_raw_rows
 from .redaction import redact_text, redact_url_credentials
 from .state import (
@@ -1211,6 +1212,11 @@ def write_crawl_outputs(
     write_json: bool = True,
     write_csv_files: bool = True,
 ) -> list[Path]:
+    """Write crawl output files, replacing the previous set only once every file is complete.
+
+    Files are staged beside their targets and renamed into place together, so readers
+    never see a truncated file and a failed write leaves the previous outputs intact.
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
@@ -1223,111 +1229,120 @@ def write_crawl_outputs(
     repo_day_rows = _run_scoped_rows(result.run.run_id, result.aggregates.repo_days)
     contributor_day_rows = _run_scoped_rows(result.run.run_id, result.aggregates.contributor_days)
 
-    if write_json:
-        crawl_run_jsonl = output_dir / "crawl_runs.jsonl"
-        org_jsonl = output_dir / "org_days.jsonl"
-        repo_jsonl = output_dir / "repo_days.jsonl"
-        contributor_jsonl = output_dir / "contributor_days.jsonl"
-        repository_jsonl = output_dir / "repositories.jsonl"
-        excluded_jsonl = output_dir / "excluded_repositories.jsonl"
-        commits_jsonl = output_dir / "commits.jsonl"
-        file_changes_jsonl = output_dir / "file_changes.jsonl"
-        failures_jsonl = output_dir / "repo_failures.jsonl"
-        summary_json = output_dir / "summary.json"
-        summary_md = output_dir / "summary.md"
-        activity_json = output_dir / "activity.json"
-        write_jsonl(crawl_run_jsonl, [result.run])
-        write_jsonl(org_jsonl, org_day_rows)
-        write_jsonl(repo_jsonl, repo_day_rows)
-        write_jsonl(contributor_jsonl, contributor_day_rows)
-        write_jsonl(repository_jsonl, repository_rows)
-        write_jsonl(excluded_jsonl, result.excluded_repositories)
-        write_jsonl(commits_jsonl, result.raw_commits)
-        write_jsonl(file_changes_jsonl, result.file_changes)
-        write_jsonl(failures_jsonl, result.failed_repositories)
-        summary = build_crawl_summary(result)
-        summary_json.write_text(
-            json.dumps(summary, indent=2, sort_keys=True) + "\n",
+    with ExitStack() as staged_files:
+
+        def staged(path: Path) -> Path:
+            return staged_files.enter_context(atomic_write_path(path))
+
+        if write_json:
+            crawl_run_jsonl = output_dir / "crawl_runs.jsonl"
+            org_jsonl = output_dir / "org_days.jsonl"
+            repo_jsonl = output_dir / "repo_days.jsonl"
+            contributor_jsonl = output_dir / "contributor_days.jsonl"
+            repository_jsonl = output_dir / "repositories.jsonl"
+            excluded_jsonl = output_dir / "excluded_repositories.jsonl"
+            commits_jsonl = output_dir / "commits.jsonl"
+            file_changes_jsonl = output_dir / "file_changes.jsonl"
+            failures_jsonl = output_dir / "repo_failures.jsonl"
+            summary_json = output_dir / "summary.json"
+            summary_md = output_dir / "summary.md"
+            activity_json = output_dir / "activity.json"
+            _write_jsonl_file(staged(crawl_run_jsonl), [result.run])
+            _write_jsonl_file(staged(org_jsonl), org_day_rows)
+            _write_jsonl_file(staged(repo_jsonl), repo_day_rows)
+            _write_jsonl_file(staged(contributor_jsonl), contributor_day_rows)
+            _write_jsonl_file(staged(repository_jsonl), repository_rows)
+            _write_jsonl_file(staged(excluded_jsonl), result.excluded_repositories)
+            _write_jsonl_file(staged(commits_jsonl), result.raw_commits)
+            _write_jsonl_file(staged(file_changes_jsonl), result.file_changes)
+            _write_jsonl_file(staged(failures_jsonl), result.failed_repositories)
+            summary = build_crawl_summary(result)
+            staged(summary_json).write_text(
+                json.dumps(summary, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            staged(summary_md).write_text(_render_summary_markdown(summary), encoding="utf-8")
+            activity = build_activity(
+                org=result.org,
+                run_id=result.run.run_id,
+                status=result.run.status,
+                ref_scope=result.run.ref_scope,
+                history_since=result.run.history_since,
+                history_until=result.run.history_until,
+                commits=result.commits,
+            )
+            staged(activity_json).write_text(
+                json.dumps(activity, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            written.extend(
+                [
+                    crawl_run_jsonl,
+                    org_jsonl,
+                    repo_jsonl,
+                    contributor_jsonl,
+                    repository_jsonl,
+                    excluded_jsonl,
+                    commits_jsonl,
+                    file_changes_jsonl,
+                    failures_jsonl,
+                    summary_json,
+                    summary_md,
+                    activity_json,
+                ]
+            )
+
+        if write_csv_files:
+            crawl_run_csv = output_dir / "crawl_runs.csv"
+            org_csv = output_dir / "org_days.csv"
+            repo_csv = output_dir / "repo_days.csv"
+            contributor_csv = output_dir / "contributor_days.csv"
+            repository_csv = output_dir / "repositories.csv"
+            excluded_csv = output_dir / "excluded_repositories.csv"
+            commits_csv = output_dir / "commits.csv"
+            file_changes_csv = output_dir / "file_changes.csv"
+            failures_csv = output_dir / "repo_failures.csv"
+            _write_csv_file(staged(crawl_run_csv), [result.run], fieldnames=CRAWL_RUN_FIELDS)
+            _write_csv_file(staged(org_csv), org_day_rows, fieldnames=ORG_DAY_FIELDS)
+            _write_csv_file(staged(repo_csv), repo_day_rows, fieldnames=REPO_DAY_FIELDS)
+            _write_csv_file(
+                staged(contributor_csv),
+                contributor_day_rows,
+                fieldnames=CONTRIBUTOR_DAY_FIELDS,
+            )
+            _write_csv_file(staged(repository_csv), repository_rows, fieldnames=REPOSITORY_FIELDS)
+            _write_csv_file(
+                staged(excluded_csv),
+                result.excluded_repositories,
+                fieldnames=EXCLUDED_REPOSITORY_FIELDS,
+            )
+            _write_csv_file(staged(commits_csv), result.raw_commits, fieldnames=COMMIT_FIELDS)
+            _write_csv_file(staged(file_changes_csv), result.file_changes, fieldnames=FILE_CHANGE_FIELDS)
+            _write_csv_file(staged(failures_csv), result.failed_repositories, fieldnames=REPO_FAILURE_FIELDS)
+            written.extend(
+                [
+                    crawl_run_csv,
+                    org_csv,
+                    repo_csv,
+                    contributor_csv,
+                    repository_csv,
+                    excluded_csv,
+                    commits_csv,
+                    file_changes_csv,
+                    failures_csv,
+                ]
+            )
+
+        output_manifest = output_dir / "output_manifest.json"
+        staged(output_manifest).write_text(
+            json.dumps(
+                build_output_manifest(result, write_json=write_json, write_csv_files=write_csv_files),
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
         )
-        summary_md.write_text(_render_summary_markdown(summary), encoding="utf-8")
-        activity = build_activity(
-            org=result.org,
-            run_id=result.run.run_id,
-            status=result.run.status,
-            ref_scope=result.run.ref_scope,
-            history_since=result.run.history_since,
-            history_until=result.run.history_until,
-            commits=result.commits,
-        )
-        activity_json.write_text(
-            json.dumps(activity, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        written.extend(
-            [
-                crawl_run_jsonl,
-                org_jsonl,
-                repo_jsonl,
-                contributor_jsonl,
-                repository_jsonl,
-                excluded_jsonl,
-                commits_jsonl,
-                file_changes_jsonl,
-                failures_jsonl,
-                summary_json,
-                summary_md,
-                activity_json,
-            ]
-        )
-
-    if write_csv_files:
-        crawl_run_csv = output_dir / "crawl_runs.csv"
-        org_csv = output_dir / "org_days.csv"
-        repo_csv = output_dir / "repo_days.csv"
-        contributor_csv = output_dir / "contributor_days.csv"
-        repository_csv = output_dir / "repositories.csv"
-        excluded_csv = output_dir / "excluded_repositories.csv"
-        commits_csv = output_dir / "commits.csv"
-        file_changes_csv = output_dir / "file_changes.csv"
-        failures_csv = output_dir / "repo_failures.csv"
-        write_csv(crawl_run_csv, [result.run], fieldnames=CRAWL_RUN_FIELDS)
-        write_csv(org_csv, org_day_rows, fieldnames=ORG_DAY_FIELDS)
-        write_csv(repo_csv, repo_day_rows, fieldnames=REPO_DAY_FIELDS)
-        write_csv(
-            contributor_csv,
-            contributor_day_rows,
-            fieldnames=CONTRIBUTOR_DAY_FIELDS,
-        )
-        write_csv(repository_csv, repository_rows, fieldnames=REPOSITORY_FIELDS)
-        write_csv(excluded_csv, result.excluded_repositories, fieldnames=EXCLUDED_REPOSITORY_FIELDS)
-        write_csv(commits_csv, result.raw_commits, fieldnames=COMMIT_FIELDS)
-        write_csv(file_changes_csv, result.file_changes, fieldnames=FILE_CHANGE_FIELDS)
-        write_csv(failures_csv, result.failed_repositories, fieldnames=REPO_FAILURE_FIELDS)
-        written.extend(
-            [
-                crawl_run_csv,
-                org_csv,
-                repo_csv,
-                contributor_csv,
-                repository_csv,
-                excluded_csv,
-                commits_csv,
-                file_changes_csv,
-                failures_csv,
-            ]
-        )
-
-    output_manifest = output_dir / "output_manifest.json"
-    output_manifest.write_text(
-        json.dumps(
-            build_output_manifest(result, write_json=write_json, write_csv_files=write_csv_files),
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    written.append(output_manifest)
+        written.append(output_manifest)
 
     return written

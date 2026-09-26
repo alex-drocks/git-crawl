@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import subprocess
 from pathlib import Path
 
 from git_crawl.cli import main
+from git_crawl.git_backend import mirror_path
 from git_crawl.github import RepoInfo
 from git_crawl.pipeline import (
     COMMIT_FIELDS,
@@ -366,3 +369,84 @@ def test_crawl_org_preserves_raw_mailmapped_author_and_non_ascii_paths(monkeypat
 
     file_change = next(row for row in result.file_changes if row.sha == raw_author_sha)
     assert file_change.path == "café.txt"
+
+
+def _git_bytes(repo_path: Path, *args: str, stdin: bytes | None = None) -> bytes:
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    completed = subprocess.run(["git", *args], cwd=repo_path, input=stdin, capture_output=True, env=env, check=True)
+    return completed.stdout
+
+
+def test_crawl_org_survives_non_utf8_paths_and_identities_in_history(monkeypatch, tmp_path, local_git_repo):
+    local_git_repo.write_text("src/app.py", "print('hello')\n")
+    base_sha = local_git_repo.commit("initial app")
+
+    # Git stores paths and identities as raw bytes; imported histories can carry
+    # Latin-1. Build such a commit with plumbing, since porcelain would re-encode it.
+    repo_path = local_git_repo.path
+    blob = _git_bytes(repo_path, "hash-object", "-w", "--stdin", stdin=b"legacy\n").strip()
+    tree_entries = _git_bytes(repo_path, "ls-tree", "HEAD") + b"100644 blob " + blob + b"\tcaf\xe9.txt\n"
+    tree = _git_bytes(repo_path, "mktree", stdin=tree_entries).strip()
+    commit_object = (
+        b"tree " + tree + b"\nparent " + base_sha.encode() + b"\n"
+        b"author Fran\xe7ois <francois@example.com> 1767272400 +0000\n"
+        b"committer Integration Tester <tester@example.com> 1767272400 +0000\n"
+        b"\nlegacy latin-1 commit\n"
+    )
+    legacy_sha = _git_bytes(repo_path, "hash-object", "-t", "commit", "-w", "--stdin", stdin=commit_object)
+    legacy_sha = legacy_sha.strip().decode()
+    local_git_repo.run("update-ref", "refs/heads/main", legacy_sha)
+
+    monkeypatch.setattr(
+        "git_crawl.pipeline.list_org_repositories",
+        lambda org, token=None: [_repo_info(local_git_repo.path)],
+    )
+
+    result = crawl_org("localorg", cache_dir=tmp_path / "mirrors", commit_changes_filtration_level="all")
+
+    assert result.run.status == "success"
+    assert {commit.sha for commit in result.commits} == {base_sha, legacy_sha}
+    legacy_commit = next(row for row in result.raw_commits if row.sha == legacy_sha)
+    assert legacy_commit.author_name == "Fran�ois"
+    assert [row.path for row in result.file_changes if row.sha == legacy_sha] == ["caf�.txt"]
+
+
+def test_all_refs_crawl_excludes_github_pull_request_refs_from_new_and_upgraded_mirrors(
+    monkeypatch,
+    tmp_path,
+    local_git_repo,
+):
+    local_git_repo.write_text("src/app.py", "print('hello')\n")
+    main_sha = local_git_repo.commit("initial app")
+    local_git_repo.checkout("feature", create=True)
+    local_git_repo.write_text("src/feature.py", "FEATURE = True\n")
+    feature_sha = local_git_repo.commit("feature branch work")
+    local_git_repo.checkout("pr-head", create=True)
+    local_git_repo.write_text("src/unmerged.py", "UNMERGED = True\n")
+    pull_sha = local_git_repo.commit("unmerged pull request work")
+    local_git_repo.checkout("main")
+    # GitHub advertises pull request heads under refs/pull/, outside the branch namespace.
+    local_git_repo.run("update-ref", "refs/pull/7/head", pull_sha)
+    local_git_repo.run("branch", "-D", "pr-head")
+
+    monkeypatch.setattr(
+        "git_crawl.pipeline.list_org_repositories",
+        lambda org, token=None: [_repo_info(local_git_repo.path)],
+    )
+    upgraded_cache = tmp_path / "upgraded-mirrors"
+    upgraded_cache.mkdir()
+    # git-crawl 0.3.2 and earlier cached repositories with `git clone --mirror`.
+    _git_bytes(
+        tmp_path,
+        "clone",
+        "--quiet",
+        "--mirror",
+        str(local_git_repo.path),
+        str(mirror_path(upgraded_cache, _repo_info(local_git_repo.path))),
+    )
+
+    for cache_dir in (tmp_path / "new-mirrors", upgraded_cache):
+        result = crawl_org("localorg", cache_dir=cache_dir, ref_scope="all-refs")
+
+        assert result.run.status == "success"
+        assert {commit.sha for commit in result.commits} == {main_sha, feature_sha}
